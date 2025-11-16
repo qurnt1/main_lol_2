@@ -1,6 +1,6 @@
-# 🛡️ MAIN LOL - Assistant pour League of Legends (v4.3)
+# 🛡️ MAIN LOL - Assistant pour League of Legends (v4.4)
 
-![Version](https://img.shields.io/badge/version-v4.3-blue.svg)
+![Version](https://img.shields.io/badge/version-v4.4-blue.svg)
 ![Python](https://img.shields.io/badge/Python-3.9+-green.svg)
 ![UI](https://img.shields.io/badge/UI-ttkbootstrap-purple.svg)
 
@@ -28,7 +28,7 @@ Ce projet est conçu pour être compilé, mais peut aussi être lancé depuis le
 
 1.  **Clonez le dépôt :**
     ```bash
-    git clone [URL_DE_VOTRE_DEPOT]
+    git clone https://github.com/qurnt1/main_lol.git
     cd MAIN_LOL_v4
     ```
 
