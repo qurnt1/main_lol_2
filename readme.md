@@ -22,7 +22,7 @@ Ce projet est conçu pour être compilé, mais peut aussi être lancé depuis le
 
 1.  **Clonez le dépôt :**
     ```bash
-    git clone [https://github.com/qurnt1/main_lol.git](https://github.com/qurnt1/main_lol.git)
+    git clone https://github.com/qurnt1/main_lol.git
     cd MAIN_LOL_v4
     ```
 
