@@ -794,6 +794,10 @@ class LoLAssistant:
         self._last_cs_timer_fetch = 0.0
         self._cs_session_period = 0.7
         self._cs_timer_period = 0.30
+        # Cooldown son d'acceptation de game
+        self.last_ready_accept_sound_ts = 0.0
+        self.ready_accept_cooldown = 12.0
+
 
         self.dd = DataDragon()
         self.dd.load() 
@@ -1180,6 +1184,17 @@ class LoLAssistant:
             self.show_toast("🎯 Game Start !")
             self.update_status("🎯 Game Start détecté")
             self.last_game_start_notify_ts = now
+    
+    def _play_accept_sound_once(self):
+        """Joue le son d'acceptation au max une fois toutes les X secondes."""
+        now = time()
+        if now - self.last_ready_accept_sound_ts >= self.ready_accept_cooldown:
+            try:
+                pygame.mixer.Sound(resource_path("config/son.wav")).play()
+            except Exception:
+                pass
+            self.last_ready_accept_sound_ts = now
+
 
     def _reset_between_games(self):
         """Réinitialise tous les flags/états entre les parties."""
@@ -1612,8 +1627,9 @@ class LoLAssistant:
                 if self.auto_accept_enabled and data.get('state') == 'InProgress':
                     await connection.request('post', '/lol-matchmaking/v1/ready-check/accept')
                     self.update_status("✅ Partie acceptée automatiquement (WS) !")
-                    try: pygame.mixer.Sound(resource_path("config/son.wav")).play()
-                    except Exception: pass
+                    # Ne joue pas le son plus d'une fois toutes les 12 secondes
+                    self._play_accept_sound_once()
+
 
             # Champ select session -> tick immédiat
             @connector.ws.register('/lol-champ-select/v1/session')
