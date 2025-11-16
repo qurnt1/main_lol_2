@@ -13,5 +13,7 @@
     "manual_summoner_name": "VotrePseudo#EUW",
     "summoner": "",
     "global_spell_1": "Flash",
-    "global_spell_2": "Teleport"
+    "global_spell_2": "Teleport",
+    "auto_play_again_enabled": true,
+    "auto_meta_runes_enabled": true
 }

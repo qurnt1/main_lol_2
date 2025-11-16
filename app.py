@@ -9,12 +9,16 @@ Ce programme automatise plusieurs actions dans League of Legends :
 - Sélection automatique des sorts (Spells) (configurable globalement)
 - Sélection automatique de la page de runes (si le nom = nom du champion)
 - Intégration avec Porofessor et OP.GG (avec override pseudo)
-- WebSocket LCU optionnel (fallback polling)
+- WebSocket LCU (Désormais OBLIGATOIRE, le polling HTTP a été retiré)
 - Timers/backoff dédiés par endpoint
 - Anti-spam pour les notifications GameStart
 
+--- NOUVELLES FONCTIONNALITÉS (v4.5 Gemini Modifiée) ---
+- Importateur de Runes Meta (via Runeforge.gg)
+- Automatisation Post-Game (Rejouer auto)
+
 Auteur: Qurnt1 (mis à jour par Gemini)
-Version: 4.4 (Fix WebSocket Loop)
+Version: 4.6 (WebSocket Uniquement)
 """
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -44,12 +48,8 @@ import tempfile
 import re
 import unicodedata
 from typing import Optional, Dict, Any, List, Tuple
+from lcu_driver import Connector
 
-# lcu_driver FACULTATIF: utilisé seulement si présent (WebSocket).
-try:
-    from lcu_driver import Connector  # noqa: F401
-except Exception:
-    Connector = None
 
 # ───────────────────────────────────────────────────────────────────────────
 # UTILITAIRES GENERAUX
@@ -89,9 +89,13 @@ DEFAULT_PARAMS = {
     "summoner_name_auto_detect": True,
     "manual_summoner_name": "VotrePseudo#EUW", 
     
-    # NOUVEAU: Sorts Globaux (remplace les sorts par rôle)
+    # NOUVEAU: Sorts Globaux
     "global_spell_1": "Heal",
     "global_spell_2": "Flash",
+    
+    # NOUVEAU (v4.5): Features 2, 3, 4 (Modifié: Honneur et Mates retirés)
+    "auto_play_again_enabled": False,
+    "auto_meta_runes_enabled": True,
 }
 
 REGION_LIST = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
@@ -420,7 +424,8 @@ class SettingsWindow:
         self.parent = parent
         self.window = ttk.Toplevel(parent.root)
         self.window.title("Paramètres - MAIN LOL")
-        self.window.geometry("550x560") # Ajustement taille
+        # Hauteur réduite car des widgets ont été retirés
+        self.window.geometry("550x650") 
         self.window.resizable(False, False)
         
         img = Image.open(resource_path("./config/imgs/garen.webp")).resize((16, 16))
@@ -435,6 +440,10 @@ class SettingsWindow:
         self.summ_var = tk.BooleanVar(value=parent.auto_summoners_enabled) # Renommé
         self.summ_auto_var = tk.BooleanVar(value=parent.summoner_name_auto_detect)
         self.summ_entry_var = tk.StringVar(value=parent.manual_summoner_name)
+        
+        # NOUVEAU (v4.5): Features 2, 3, 4 (Modifié)
+        self.play_again_var = tk.BooleanVar(value=parent.auto_play_again_enabled)
+        self.meta_runes_var = tk.BooleanVar(value=parent.auto_meta_runes_enabled)
 
         # Listes
         try:
@@ -518,43 +527,65 @@ class SettingsWindow:
         self.pick_cb_3.bind("<KeyRelease>", self._on_champ_search)
         self.pick_cb_3.bind("<FocusOut>", self._validate_champ_selection)
 
-        # NOUVEAU: Auto Summoners + Sorts Globaux (Rows 6-8)
+        # NOUVEAU: Auto Summoners + Sorts Globaux (Rows 6-11)
         ttk.Checkbutton(
-            frame, text="Auto Summoners (et Runes si nom = champ)", 
+            frame, text="Auto Summoners (et Runes)", 
             variable=self.summ_var, # Renommé
             command=lambda: setattr(self.parent, 'auto_summoners_enabled', self.summ_var.get()),
             bootstyle="primary-round-toggle"
         ).grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
         
-        ttk.Label(frame, text="Sort 1 :").grid(row=7, column=0, sticky="e", padx=(10, 5), pady=2)
+        # NOUVEAU (v4.5): Checkbox Meta Runes
+        ttk.Checkbutton(
+            frame, text="    ↳ Importer les runes Meta (via Runeforge.gg)", 
+            variable=self.meta_runes_var,
+            command=lambda: setattr(self.parent, 'auto_meta_runes_enabled', self.meta_runes_var.get()),
+            bootstyle="primary-round-toggle"
+        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=30, pady=(0, 5))
+        
+        ttk.Label(frame, text="Sort 1 :").grid(row=8, column=0, sticky="e", padx=(10, 5), pady=2)
         self.spell_cb_1 = ttk.Combobox(frame, values=self.spell_list, state="readonly", width=15)
         self.spell_cb_1.set(getattr(self.parent, 'global_spell_1'))
-        self.spell_cb_1.grid(row=7, column=1, padx=10, pady=5, sticky="we")
-        self.spell_cb_1.bind("<<ComboboxSelected>>", self._on_spell_selected) # AJOUT v4.3
+        self.spell_cb_1.grid(row=8, column=1, padx=10, pady=5, sticky="we")
+        self.spell_cb_1.bind("<<ComboboxSelected>>", self._on_spell_selected)
         
-        ttk.Label(frame, text="Sort 2 :").grid(row=8, column=0, sticky="e", padx=(10, 5), pady=2)
+        ttk.Label(frame, text="Sort 2 :").grid(row=9, column=0, sticky="e", padx=(10, 5), pady=2)
         self.spell_cb_2 = ttk.Combobox(frame, values=self.spell_list, state="readonly", width=15)
         self.spell_cb_2.set(getattr(self.parent, 'global_spell_2'))
-        self.spell_cb_2.grid(row=8, column=1, padx=10, pady=5, sticky="we")
-        self.spell_cb_2.bind("<<ComboboxSelected>>", self._on_spell_selected) # AJOUT v4.3
+        self.spell_cb_2.grid(row=9, column=1, padx=10, pady=5, sticky="we")
+        self.spell_cb_2.bind("<<ComboboxSelected>>", self._on_spell_selected)
 
-        # Région (Row 9)
-        ttk.Label(frame, text="Région :", anchor="w").grid(row=9, column=0, sticky="w", padx=10, pady=5)
+        # Région (Row 10)
+        ttk.Label(frame, text="Région :", anchor="w").grid(row=10, column=0, sticky="w", padx=10, pady=5)
         self.region_var = tk.StringVar(value=self.parent.region)
         self.region_cb = ttk.Combobox(frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
-        self.region_cb.grid(row=9, column=1, sticky="we", padx=10)
+        self.region_cb.grid(row=10, column=1, sticky="we", padx=10)
         self.region_cb.bind("<<ComboboxSelected>>", lambda e: setattr(self.parent, 'region', self.region_var.get()))
 
-        # Override Pseudo (Rows 10-11)
+        # Override Pseudo (Rows 11-12)
         ttk.Checkbutton(
             frame, text="Détection auto du pseudo", variable=self.summ_auto_var,
             command=self.toggle_summoner_entry,
             bootstyle="success-round-toggle"
-        ).grid(row=10, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        ).grid(row=11, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
         
-        ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=11, column=0, sticky="w", padx=10, pady=5)
+        ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=12, column=0, sticky="w", padx=10, pady=5)
         self.summ_entry = ttk.Entry(frame, textvariable=self.summ_entry_var, state="readonly")
-        self.summ_entry.grid(row=11, column=1, sticky="we", padx=10)
+        self.summ_entry.grid(row=12, column=1, sticky="we", padx=10)
+        
+        # NOUVEAU (v4.5): Automatisation Post-Game (Rows 13-14)
+        ttk.Separator(frame).grid(row=13, column=0, columnspan=2, sticky="we", pady=10)
+
+        # (Modifié: Honneur auto retiré)
+        
+        # (Modifié: Label changé)
+        ttk.Checkbutton(
+            frame, text="\"Rejouer\" automatiquement en fin de partie (skip stats)", variable=self.play_again_var,
+            command=lambda: setattr(self.parent, 'auto_play_again_enabled', self.play_again_var.get()),
+            bootstyle="info-round-toggle"
+        ).grid(row=14, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+        
+        # (Modifié: Mates OP.GG retiré)
 
         # Bouton Fermer (en dehors de la frame)
         ttk.Button(
@@ -584,12 +615,12 @@ class SettingsWindow:
         self.pick_cb_1.configure(state=new_state)
         self.pick_cb_2.configure(state=new_state)
         self.pick_cb_3.configure(state=new_state)
-            
+                
     def toggle_ban(self):
         """Active/Désactive la liste de ban."""
         new_state = "normal" if self.ban_var.get() else "disabled"
         self.ban_cb.configure(state=new_state)
-            
+                
     def _poll_summoner_label(self):
         """Met à jour le champ pseudo si en mode auto."""
         if not self.window.winfo_exists():
@@ -701,6 +732,10 @@ class SettingsWindow:
         if not self.summ_auto_var.get():
             self.parent.manual_summoner_name = self.summ_entry_var.get()
             
+        # NOUVEAU (v4.5): Sauvegarde Features 2, 3, 4 (Modifié)
+        self.parent.auto_play_again_enabled = self.play_again_var.get()
+        self.parent.auto_meta_runes_enabled = self.meta_runes_var.get()
+                
         self.parent.save_parameters()
         self.window.destroy()
 
@@ -721,7 +756,6 @@ class LoLAssistant:
 
         # Variables d'état
         self.running = True
-        self.client_seen = False
         self.auto_accept_enabled = DEFAULT_PARAMS["auto_accept_enabled"]
         self.auto_pick_enabled = DEFAULT_PARAMS["auto_pick_enabled"]
         self.auto_ban_enabled = DEFAULT_PARAMS["auto_ban_enabled"]
@@ -729,6 +763,10 @@ class LoLAssistant:
         self.region = DEFAULT_PARAMS["region"]
         self.platform_routing = "euw1"
         self.region_routing = "europe"
+        
+        # NOUVEAU (v4.5): Features 2, 3, 4 (Modifié)
+        self.auto_play_again_enabled = DEFAULT_PARAMS["auto_play_again_enabled"]
+        self.auto_meta_runes_enabled = DEFAULT_PARAMS["auto_meta_runes_enabled"]
         
         # Logique de pseudo
         self.summoner = "" 
@@ -761,7 +799,7 @@ class LoLAssistant:
         self.dd.load() 
         self.lcu = LCUHttpClient()
         self._stop_event = Event()
-        self.ws_active = False
+        self.ws_active = False # Contrôlé par le WebSocket
 
         # Picks
         self.selected_pick_1 = DEFAULT_PARAMS["selected_pick_1"]
@@ -784,11 +822,15 @@ class LoLAssistant:
         self.create_ui()
         self.create_system_tray()
         self.setup_hotkeys()
-        self.lcu_thread = Thread(target=self._lcu_main_loop, daemon=True)
-        self.lcu_thread.start()
+        
+        # Modifié: Le polling HTTP a été retiré. Seul le WebSocket est démarré.
         if Connector is not None:
             self.ws_thread = Thread(target=self._ws_loop, daemon=True)
             self.ws_thread.start()
+        else:
+            # Si lcu_driver n'est pas installé, l'application ne peut pas fonctionner.
+            self.root.after(100, lambda: self.update_status("❌ Erreur: 'lcu_driver' manquant."))
+            self.root.after(100, lambda: self.update_connection_indicator(False))
 
     # ── Configuration (Mise à jour pour Sorts Globaux) ───────────
 
@@ -825,6 +867,11 @@ class LoLAssistant:
         # NOUVEAU: Sorts Globaux
         self.global_spell_1 = config.get('global_spell_1', self.global_spell_1)
         self.global_spell_2 = config.get('global_spell_2', self.global_spell_2)
+        
+        # NOUVEAU (v4.5): Features 2, 3, 4 (Modifié)
+        self.auto_play_again_enabled = config.get('auto_play_again_enabled', self.auto_play_again_enabled)
+        self.auto_meta_runes_enabled = config.get('auto_meta_runes_enabled', self.auto_meta_runes_enabled)
+
 
     def save_parameters(self):
         """Sauvegarde les paramètres dans parameters.json."""
@@ -847,6 +894,10 @@ class LoLAssistant:
             # NOUVEAU: Sorts Globaux
             "global_spell_1": self.global_spell_1,
             "global_spell_2": self.global_spell_2,
+            
+            # NOUVEAU (v4.5): Features 2, 3, 4 (Modifié)
+            "auto_play_again_enabled": self.auto_play_again_enabled,
+            "auto_meta_runes_enabled": self.auto_meta_runes_enabled,
         }
         try:
             os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
@@ -883,7 +934,7 @@ class LoLAssistant:
 
         self.status_label = ttk.Label(
             self.root,
-            text="🎮 En attente du client LoL...",
+            text="🔌 En attente du WebSocket LCU...",
             style="Status.TLabel"
         )
         self.status_label.place(relx=0.5, rely=0.38, anchor="center")
@@ -973,7 +1024,7 @@ class LoLAssistant:
     def build_porofessor_url(self) -> str:
         platform = self._platform_for_websites()
         name_tag = urllib.parse.quote(self._riot_url_name())
-        return f"https://porofessor.gg/fr/live/{platform}/{name_tag}"
+        return f"https.porofessor.gg/fr/live/{platform}/{name_tag}"
 
     def _riot_id_display_string(self) -> Optional[str]:
         """Retourne le pseudo à utiliser (auto ou manuel)"""
@@ -1046,7 +1097,9 @@ class LoLAssistant:
                     r = 4 + int(2 * abs((step % 20) - 10) / 10)
                     self.connection_indicator.delete("all")
                     self.connection_indicator.create_oval(6 - r, 6 - r, 6 + r, 6 + r, fill=color, outline="")
-                    if self.running and self.client_seen:
+                    
+                    # Modifié: la pulsation dépend de self.ws_active
+                    if self.running and self.ws_active:
                         self.connection_indicator.after(50, lambda: pulse(step + 1))
                     elif self.connection_indicator.winfo_exists():
                         # Assure que le point redevient rouge si déconnecté
@@ -1062,35 +1115,9 @@ class LoLAssistant:
             self.root.after(duration, toast.destroy)
         except Exception: pass
 
-    # ── Détection client LoL ────────────────────────────────────
-
-    def _wait_for_client_process(self):
-        """
-        Attente (polling léger) du process LeagueClientUx.exe.
-        """
-        while self.running and not self._stop_event.is_set():
-            try:
-                alive = any(
-                    (p.info.get('name') or "") == "LeagueClientUx.exe"
-                    for p in psutil.process_iter(['name'])
-                )
-                if alive and not self.client_seen:
-                    self.client_seen = True
-                    self.update_status("✅ Client LoL détecté !")
-                    self.update_connection_indicator(True)
-                    self.root.after(3000, self.hide_window)
-                    return True
-                if not alive and self.client_seen:
-                    self.client_seen = False
-                    self.update_status("❌ Client LoL déconnecté")
-                    self.update_connection_indicator(False)
-                    self.root.after(0, self.quit_app)
-                    return False
-                sleep(1.0)
-            except Exception as e:
-                print(f"Erreur lors de la détection du client: {e}")
-                sleep(1.0)
-        return False
+    # ── Détection client LoL (RETIRÉE) ──────────────────────────
+    # La fonction _wait_for_client_process a été retirée.
+    # La détection est gérée par lcu_driver (Connector).
 
     # ── LCU: Récupération joueur + région ───────────────────
 
@@ -1100,7 +1127,13 @@ class LoLAssistant:
         - Riot ID: gameName, tagLine (+ fallback displayName)
         - summonerId, puuid
         - platform routing (euw1, na1, kr...) et region routing (europe, americas, asia)
+        (Doit être appelé après la connexion WS)
         """
+        # S'assure que la session HTTP est prête (nécessaire même avec WS)
+        if not self.lcu.ensure_ready(10.0):
+            self.update_status("❌ Impossible de lire le lockfile LCU (pour refresh)")
+            return
+            
         me = self.lcu.get_json("/lol-summoner/v1/current-summoner", timeout=5.0, max_retries=3)
         if isinstance(me, dict):
             self.auto_game_name = me.get("gameName") or self.auto_game_name
@@ -1118,7 +1151,7 @@ class LoLAssistant:
             self.update_status(f"👤 Connecté en tant que {self._riot_id_display_string()}")
 
         reg = self.lcu.get_json("/riotclient/get_region_locale", timeout=3.0, max_retries=2) \
-              or self.lcu.get_json("/riotclient/region-locale", timeout=3.0, max_retries=2)
+            or self.lcu.get_json("/riotclient/region-locale", timeout=3.0, max_retries=2)
         if isinstance(reg, dict):
             platform = (reg.get("platformId") or reg.get("region") or "").lower()
             if platform:
@@ -1135,73 +1168,8 @@ class LoLAssistant:
         if platform in {"kr", "jp1"}: return "asia"
         return "europe"
 
-    # ── LCU: Boucle principale (polling) ──────────────────────────────────
-    def _lcu_main_loop(self):
-        if not self._wait_for_client_process(): return
-        if not self.lcu.ensure_ready(30.0):
-            self.update_status("❌ Impossible de lire le lockfile LCU")
-            return
-        
-        self._refresh_player_and_region()
-        
-        phase_emojis = {"None":"🏠","Lobby":"🎮","Matchmaking":"🔍","ReadyCheck":"⏳","ChampSelect":"👑","GameStart":"🎯","InProgress":"⚔️","WaitingForStats":"📊","PreEndOfGame":"🏆","EndOfGame":"🎉"}
-        last_phase = None
-        last_accept_ts = 0.0
-
-        while self.running and not self._stop_event.is_set():
-            try:
-                # Arrêt si client mort
-                if not any((p.info.get('name') or "") == "LeagueClientUx.exe" for p in psutil.process_iter(['name'])):
-                    if self.client_seen:
-                        self.client_seen = False
-                        self.update_status("❌ Client LoL déconnecté")
-                        self.update_connection_indicator(False)
-                        self.root.after(0, self.quit_app)
-                    break
-                
-                # Si client vient de démarrer
-                if not self.client_seen:
-                    if not self._wait_for_client_process(): break
-                        
-                sleep_base = 0.9 if self.ws_active else 0.6
-
-                phase = self.lcu.get_json("/lol-gameflow/v1/gameflow-phase", timeout=3.0, max_retries=2)
-                if isinstance(phase, str):
-                    self.current_phase = phase
-                    if phase != last_phase:
-                        emoji = phase_emojis.get(phase, "ℹ️")
-                        self.update_status(f"{emoji} Phase : {phase}")
-                        print(f"[PHASE] → {phase}", flush=True)
-                        if phase == "ChampSelect": self._reset_between_games()
-                        if phase in ("GameStart", "InProgress"): self._notify_game_start_once()
-                        if phase in ("EndOfGame", "PreEndOfGame", "None"): self._reset_between_games()
-                        last_phase = phase
-                
-                if self.auto_accept_enabled:
-                    rc = self.lcu.get_json("/lol-matchmaking/v1/ready-check", timeout=2.0, max_retries=2)
-                    if isinstance(rc, dict) and rc.get("state") == "InProgress":
-                        if time() - last_accept_ts > 2.0:
-                            r = self.lcu.post("/lol-matchmaking/v1/ready-check/accept", timeout=3.0, max_retries=2)
-                            code = r.status_code if r else "NO_RESP"
-                            self.update_status(f"✅ Partie acceptée automatiquement ! (HTTP {code})")
-                            try: pygame.mixer.Sound(resource_path("config/son.wav")).play()
-                            except Exception: pass
-                            last_accept_ts = time()
-
-                if self.current_phase == "ChampSelect":
-                    now = time()
-                    if now - self._last_cs_timer_fetch >= self._cs_timer_period:
-                        self._champ_select_timer_tick()
-                        self._last_cs_timer_fetch = now
-                    if now - self._last_cs_session_fetch >= self._cs_session_period:
-                        self._champ_select_tick()
-                        self._last_cs_session_fetch = now
-                
-                sleep(sleep_base)
-                
-            except Exception as e:
-                print(f"[LCU LOOP] Erreur: {e}", flush=True)
-                sleep(1.0)
+    # ── LCU: Boucle principale (polling) (RETIRÉE) ─────────────────
+    # La fonction _lcu_main_loop a été retirée.
 
     def _notify_game_start_once(self):
         """Anti-spam: joue le son et toast GameStart au maximum toutes les X secondes."""
@@ -1224,6 +1192,9 @@ class LoLAssistant:
         self.last_intent_try_ts = 0.0
         self._last_cs_session_fetch = 0.0
         self._last_cs_timer_fetch = 0.0
+        
+        # (Modifié: Flag OP.GG retiré)
+        
         print("[RESET] Flags internes remis à zéro.", flush=True)
 
     def _champ_select_timer_tick(self):
@@ -1237,8 +1208,8 @@ class LoLAssistant:
         if isinstance(timer, dict):
             phase = timer.get("phase") or timer.get("timerPhase") or ""
             remain = timer.get("phaseTimeRemaining") or timer.get("timeRemainingInPhase") \
-                     or timer.get("adjustedTimeLeftInPhaseMs") or timer.get("totalTimeInPhase") \
-                     or timer.get("timeLeftInPhase") or 0
+                or timer.get("adjustedTimeLeftInPhaseMs") or timer.get("totalTimeInPhase") \
+                or timer.get("timeLeftInPhase") or 0
             try:
                 remain_sec = int(remain / 1000) if remain and remain > 1000 else int(remain)
             except Exception: remain_sec = 0
@@ -1260,6 +1231,8 @@ class LoLAssistant:
             if not isinstance(session, dict):
                 print("[CS] Session indisponible.", flush=True)
                 return
+        
+        # (Modifié: Déclencheur Mates OP.GG retiré)
 
         local_id = session.get("localPlayerCellId")
         if local_id is None:
@@ -1434,8 +1407,10 @@ class LoLAssistant:
         else:
             self.update_status(f"⚠️ Échec sélection auto des sorts (HTTP {r.status_code if r else 'NA'})")
 
-    def _set_runes(self, champion_name: str):
-        """Active la page de runes si le nom correspond."""
+    # --- NOUVEAU (v4.5): Logique d'import Meta Runes ---
+    
+    def _set_runes_legacy(self, champion_name: str):
+        """[LEGACY] Active la page de runes si le nom correspond."""
         all_pages = self.lcu.get_json("/lol-perks/v1/pages", timeout=4.0)
         if not isinstance(all_pages, list):
             self.update_status("⚠️ Impossible de lister les pages de runes.")
@@ -1462,12 +1437,120 @@ class LoLAssistant:
         else:
             self.update_status(f"⚠️ Échec activation page runes (HTTP {r.status_code if r else 'NA'})")
 
-    # ── WebSocket (CORRIGÉ v4.4) ─────────────────────
+    def _set_runes(self, champion_name: str):
+        """
+        Active la page de runes.
+        - Si auto_meta_runes_enabled: Tente d'importer depuis Runeforge.gg.
+        - Sinon: Tente l'ancienne logique (nom = champion).
+        """
+        if not self.auto_meta_runes_enabled:
+            return self._set_runes_legacy(champion_name)
+
+        if not self.assigned_position:
+            self.update_status("⚠️ Runes Meta: Rôle inconnu, import impossible.")
+            return
+
+        # Normalise le nom du champion et le rôle pour l'API
+        try:
+            # ex: "Wukong" -> "monkeyking"
+            champ_slug = self.dd.by_id[self.dd.resolve_champion(champion_name)]['id'].lower()
+        except Exception:
+            champ_slug = champion_name.lower().replace(" ", "")
+            
+        role = self.assigned_position.lower()
+        if role == "utility": role = "support"
+        if role == "bottom": role = "adc"
+
+        self.update_status(f" runes Meta: Recherche pour {champ_slug} ({role})...")
+
+        try:
+            url = f"https://runeforge.gg/api/v1/runes/{champ_slug}/{role}"
+            resp = requests.get(url, timeout=5)
+            
+            if resp.status_code != 200:
+                self.update_status(f"⚠️ Runes Meta: API indisponible (HTTP {resp.status_code})")
+                return
+
+            data = resp.json()
+            if not data.get('build'):
+                self.update_status("⚠️ Runes Meta: Aucune rune trouvée pour ce rôle.")
+                return
+
+            # Prépare la page de rune pour l'API LCU
+            payload = {
+                "name": f"Meta {champion_name[:10]} ({role})",
+                "primaryStyleId": data['build']['primaryStyleId'],
+                "subStyleId": data['build']['subStyleId'],
+                "selectedPerkIds": data['build']['perks'],
+                "current": True # La définit comme active directement
+            }
+            
+            all_pages = self.lcu.get_json("/lol-perks/v1/pages", timeout=4.0)
+            if not isinstance(all_pages, list):
+                self.update_status("⚠️ Runes Meta: Erreur listage pages LCU.")
+                return
+
+            # Tente de modifier une page "Meta" existante pour éviter d'en créer 50
+            meta_page = next((p for p in all_pages if p.get('name', '').startswith("Meta ") and p.get('isEditable', False)), None)
+            
+            page_id = None
+            if meta_page:
+                page_id = meta_page.get('id')
+                r = self.lcu.put(f"/lol-perks/v1/pages/{page_id}", json=payload)
+            else:
+                # Si pas de page "Meta", tente de créer une nouvelle page
+                r = self.lcu.post("/lol-perks/v1/pages", json=payload)
+                if r and r.status_code < 400:
+                    page_id = r.json().get('id') # Récupère l'ID de la nouvelle page
+                else:
+                    self.update_status(f"⚠️ Runes Meta: Erreur création page (HTTP {r.status_code if r else 'NA'})")
+
+            if page_id:
+                # Assure que la page est bien celle active
+                self.lcu.put("/lol-perks/v1/currentpage", data=str(page_id), headers={"Content-Type": "application/json"})
+                self.update_status(f" runes Meta importées pour {champion_name} !")
+
+        except requests.RequestException as e:
+            self.update_status("⚠️ Runes Meta: Échec connexion API Runeforge.")
+            print(f"[MetaRunes] Erreur: {e}", flush=True)
+        except Exception as e:
+            self.update_status("⚠️ Runes Meta: Erreur inconnue.")
+            print(f"[MetaRunes] Erreur: {e}", flush=True)
+
+    # ── Post-Game (NOUVEAU v4.5) (Modifié) ─────────────────────────
+
+    def _handle_post_game(self):
+        """Tâche de fond pour gérer les actions post-game."""
+        print("[Post-Game] Détection de fin de partie.", flush=True)
+        # Laisse un peu de temps aux serveurs LCU de se mettre à jour
+        sleep(2.5) 
+        
+        # (Modifié: Honneur auto retiré)
+        
+        if self.auto_play_again_enabled:
+            self._auto_play_again()
+
+    # (Modifié: _auto_honor retiré)
+
+    def _auto_play_again(self):
+        """Tente de cliquer sur 'Rejouer'."""
+        try:
+            r = self.lcu.post("/lol-lobby/v2/play-again", timeout=5.0)
+            if r and r.status_code < 400:
+                self.update_status("Rejouer auto (skip stats) réussi.")
+            else:
+                self.update_status(f"⚠️ Échec Rejouer auto (HTTP {r.status_code if r else 'NA'})")
+        except Exception as e:
+            print(f"[AutoPlayAgain] Erreur: {e}", flush=True)
+
+    # ── Mates Analysis (RETIRÉ) ───────────────────────────────────
+    # La fonction _open_team_opgg a été retirée.
+
+    # ── WebSocket (Désormais obligatoire) ─────────────────────
     def _ws_loop(self):
         """
-        Active un listener WebSocket si `lcu_driver` est installé.
+        Active un listener WebSocket (lcu_driver est requis).
         - Réagit instantanément aux phases, ready-check et champ select.
-        - Fallback: si indisponible, on reste sur le polling HTTP.
         """
         if Connector is None: return
         try:
@@ -1484,25 +1567,43 @@ class LoLAssistant:
             @connector.ready
             async def on_ready(connection):
                 self.ws_active = True
+                self.update_connection_indicator(True)
                 self.update_status("🔌 WebSocket LCU connecté (mode réactif).")
+                # On doit rafraîchir les infos joueur ici, car le polling loop n'existe plus
+                Thread(target=self._refresh_player_and_region, daemon=True).start()
 
             @connector.close
             async def on_close(connection):
                 self.ws_active = False
-                self.update_status("🛑 WebSocket LCU fermé (retour au polling).")
+                self.update_connection_indicator(False)
+                self.update_status("🛑 WebSocket déconnecté. Redémarrez.")
 
             # Phase de jeu
             @connector.ws.register('/lol-gameflow/v1/gameflow-phase')
             async def _ws_phase(connection, event):
                 phase = event.data
+                if not phase: return # Ignorer si data est None
+                
                 self.current_phase = phase
                 emoji = {"None":"🏠","Lobby":"🎮","Matchmaking":"🔍","ReadyCheck":"⏳","ChampSelect":"👑","GameStart":"🎯","InProgress":"⚔️","WaitingForStats":"📊","PreEndOfGame":"🏆","EndOfGame":"🎉"}.get(phase, "ℹ️")
                 self.update_status(f"{emoji} Phase : {phase}")
+
+                # On lance les fonctions bloquantes dans des threads 
+                # pour ne pas geler la boucle WebSocket.
+                
                 if phase == "ChampSelect":
-                    self._reset_between_games()
-                    self._champ_select_tick() # Tick immédiat
-                if phase in ("GameStart", "InProgress"): self._notify_game_start_once()
-                if phase in ("EndOfGame", "PreEndOfGame", "None"): self._reset_between_games()
+                    self._reset_between_games() # Rapide, pas besoin de thread
+                    Thread(target=self._champ_select_tick, daemon=True).start() # Tick immédiat (thread)
+                
+                if phase in ("GameStart", "InProgress"): 
+                    self._notify_game_start_once() # Rapide
+                
+                if phase in ("EndOfGame", "PreEndOfGame", "None"): 
+                    self._reset_between_games() # Rapide
+                
+                # NOUVEAU (v4.5): Déclencheur Post-Game (Thread)
+                if phase in ("EndOfGame", "WaitingForStats"):
+                    Thread(target=self._handle_post_game, daemon=True).start()
 
             # Ready-check
             @connector.ws.register('/lol-matchmaking/v1/ready-check')
@@ -1518,16 +1619,18 @@ class LoLAssistant:
             @connector.ws.register('/lol-champ-select/v1/session')
             async def _ws_cs_session(connection, event):
                 if time() - self._last_cs_session_fetch > 0.25:
-                    self._champ_select_tick()
+                    # MODIFIÉ (v4.5): Utilisation d'un thread
+                    Thread(target=self._champ_select_tick, daemon=True).start()
                     self._last_cs_session_fetch = time()
 
             # Champ select timer -> tick immédiat
             @connector.ws.register('/lol-champ-select/v1/session/timer')
             async def _ws_cs_timer(connection, event):
                 if time() - self._last_cs_timer_fetch > 0.2:
-                    self._champ_select_timer_tick()
+                    # MODIFIÉ (v4.5): Utilisation d'un thread
+                    Thread(target=self._champ_select_timer_tick, daemon=True).start()
                     self._last_cs_timer_fetch = time()
-            
+                
             # Lancement (loop est déjà créé et défini)
             loop.run_until_complete(connector.start())
 

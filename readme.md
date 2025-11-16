@@ -81,10 +81,9 @@ Vous pouvez ensuite déplacer ce fichier `.exe` où vous le souhaitez, il est 10
 
 ### Gestion de la Connexion LCU
 
-L'application utilise deux méthodes pour se connecter au client LoL :
+L'application utilise un WebSocket pour se connecter au client LoL :
 
-* **WebSocket (`lcu_driver`) :** (Mode Préféré) Si la bibliothèque `lcu_driver` est installée, l'application s'abonne aux événements LCU pour une réactivité instantanée. C'est le mode le plus rapide pour l'auto-accept.
-* **HTTP Polling (`requests`) :** Si le WebSocket n'est pas disponible, l'application utilise un système de *polling* HTTP robuste et optimisé (avec *backoff* et *timers* séparés) pour interroger l'API LCU sans la surcharger.
+* **WebSocket (`lcu_driver`) :** Si la bibliothèque `lcu_driver` est installée, l'application s'abonne aux événements LCU (League Client Updates) pour une réactivité instantanée. C'est le mode le plus rapide pour l'auto-accept.
 
 ### Configuration
 
