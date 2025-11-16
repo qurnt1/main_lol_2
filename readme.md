@@ -6,12 +6,6 @@
 
 Un assistant de bureau pour League of Legends qui automatise les actions fastidieuses de la sélection des champions (Champ Select) et fournit des utilitaires rapides.
 
-## 📸 Aperçu
-
-<p align="center">
-  <img src="image.png" alt="Aperçu de l'application MAIN LOL" width="700"/>
-</p>
-
 ## ✨ Fonctionnalités Principales
 
 * **Auto-Accept:** Accepte automatiquement les parties dès qu'elles sont trouvées.
