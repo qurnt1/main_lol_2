@@ -3,6 +3,7 @@ import subprocess
 import sys
 import shlex
 import time
+import shutil # Ajout de l'import pour déplacer le fichier
 
 def check_and_install(package_name):
     """
@@ -63,9 +64,10 @@ def main():
     cleaned_content = content.replace("pyinstaller", "").replace("`\n", " ").replace("`", " ")
     args = shlex.split(cleaned_content)
     
-    # --- 5. Pré-traitement des arguments (Conversion en chemins absolus) ---
+    # --- 5. Pré-traitement des arguments (Conversion en chemins absolus et capture du nom) ---
     print("Pré-traitement des chemins relatifs...")
     processed_args = []
+    app_name = None # Variable pour stocker le nom de l'application (--name)
     
     arg_iter = iter(args)
     for arg in arg_iter:
@@ -74,6 +76,8 @@ def main():
                 # 'value' est ".\config;config"
                 value = next(arg_iter) 
                 parts = value.split(';')
+                
+                # S'assurer que 'value' contient au moins la source (parts[0])
                 if len(parts) > 0:
                     src_path = parts[0]
                     dest_path = parts[1] if len(parts) > 1 else os.path.basename(src_path)
@@ -83,7 +87,7 @@ def main():
                     
                     processed_args.append(arg)
                     processed_args.append(f"{abs_src_path};{dest_path}")
-                    print(f"  > Chemin --add-data résolu : {abs_src_path}")
+                    print(f"  > Chemin --add-data résolu : {abs_src_path}")
                 else:
                     processed_args.append(arg)
                     processed_args.append(value)
@@ -97,7 +101,17 @@ def main():
                 
                 processed_args.append(arg)
                 processed_args.append(abs_path) # Utiliser le chemin absolu
-                print(f"  > Chemin --icon résolu : {abs_path}")
+                print(f"  > Chemin --icon résolu : {abs_path}")
+            except StopIteration:
+                processed_args.append(arg)
+        
+        elif arg == '--name':
+            try:
+                name_value = next(arg_iter)
+                app_name = name_value       # Capture le nom de l'application pour le déplacement
+                processed_args.append(arg)
+                processed_args.append(name_value)
+                print(f"  > Nom de l'application défini : {app_name}")
             except StopIteration:
                 processed_args.append(arg)
         
@@ -105,17 +119,19 @@ def main():
             # Gérer le fichier .py principal (ex: app.py)
             abs_path = os.path.abspath(arg)
             processed_args.append(abs_path)
-            print(f"  > Fichier principal résolu : {abs_path}")
+            # Si --name n'est pas utilisé, le nom de l'EXE sera basé sur ce script
+            if not app_name:
+                app_name = os.path.splitext(os.path.basename(abs_path))[0]
+            print(f"  > Fichier principal résolu : {abs_path}")
         
         else:
-            # L'argument n'est pas un chemin à traiter (ex: --onefile, --name, --hidden-import)
+            # L'argument n'est pas un chemin à traiter (ex: --onefile, --hidden-import)
             processed_args.append(arg)
-            # Si l'argument attend une valeur (comme --name), on la prend
-            if arg in ('--name'):
-                try:
-                    processed_args.append(next(arg_iter))
-                except StopIteration:
-                    pass
+
+
+    if not app_name:
+        print("ERREUR: Impossible de déterminer le nom de l'application (--name non trouvé).")
+        sys.exit(1)
 
     # --- 6. Construction et exécution de la commande PyInstaller ---
     py_command = [sys.executable, "-m", "PyInstaller"]
@@ -133,7 +149,6 @@ def main():
     ])
 
     print("\n--- Lancement de PyInstaller ---")
-    # print(f"Commande : {' '.join(py_command)}") # Décommentez pour déboguer
     
     try:
         # On exécute la commande
@@ -144,12 +159,34 @@ def main():
         print("Le build a échoué.")
         sys.exit(1)
     
-    # --- 7. FIN ---
+    # --- 7. Déplacement de l'exécutable à la racine du projet ---
+    
+    # Construction du nom de fichier final (inclut l'extension .exe sous Windows)
+    exe_filename = f"{app_name}.exe" if sys.platform == "win32" else app_name
+    
+    source_path = os.path.join(dist_path, exe_filename)
+    target_path = os.path.join(root_dir, exe_filename)
+    
+    print(f"\n--- Déplacement de l'exécutable vers la racine du projet ---")
+    
+    if os.path.exists(source_path):
+        try:
+            # Déplacement de l'EXE
+            shutil.move(source_path, target_path)
+            print(f"SUCCÈS : L'exécutable a été déplacé vers : {target_path}")
+        except Exception as e:
+            print(f"ERREUR lors du déplacement de l'exécutable : {e}")
+            print(f"Le fichier est toujours disponible dans : {source_path}")
+    else:
+        print(f"ATTENTION : Fichier exécutable non trouvé à l'emplacement prévu : {source_path}")
+        print("Vérifiez la sortie de PyInstaller ou l'argument --name.")
+
+    # --- 8. FIN ---
     print("\n--- Script terminé ---")
-    print(f"L'exécutable se trouve dans : {dist_path}")
 
 if __name__ == "__main__":
     main()
+    # Pause pour Windows afin de voir les messages dans la console
     if sys.platform == "win32":
         print("\nAppuyez sur Entrée pour quitter...")
         os.system("pause > nul")

@@ -6,11 +6,11 @@
 
 Un assistant de bureau pour League of Legends qui automatise les actions fastidieuses de la sélection des champions (Champ Select) et fournit des utilitaires rapides.
 
----
-
 ## 📸 Aperçu
 
-![(image d'apercu)](image.png)
+<p align="center">
+  <img src="image.png" alt="Aperçu de l'application MAIN LOL" width="700"/>
+</p>
 
 ## ✨ Fonctionnalités Principales
 
@@ -28,7 +28,7 @@ Ce projet est conçu pour être compilé, mais peut aussi être lancé depuis le
 
 1.  **Clonez le dépôt :**
     ```bash
-    git clone https://github.com/qurnt1/main_lol.git
+    git clone [https://github.com/qurnt1/main_lol.git](https://github.com/qurnt1/main_lol.git)
     cd MAIN_LOL_v4
     ```
 
@@ -39,9 +39,35 @@ Ce projet est conçu pour être compilé, mais peut aussi être lancé depuis le
     ```
 
 3.  **Lancez l'application :**
-    ```bash
+    ```python
     python main.py
     ```
+
+## 📦 Compilation (Créer le .exe)
+
+Si vous préférez utiliser l'application comme un programme indépendant sans avoir besoin d'installer Python ou des dépendances sur d'autres machines, vous pouvez la compiler en un fichier `.exe` unique.
+
+Le projet inclut un script qui automatise l'ensemble du processus à l'aide de **PyInstaller**.
+
+1.  **Assurez-vous d'avoir Python** installé sur votre machine (nécessaire uniquement pour l'étape de compilation).
+
+2.  **Naviguez dans le dossier `Installer` :**
+    ```bash
+    cd chemin/vers/MAIN_LOL_v4/Installer
+    ```
+
+3.  **Exécutez le script d'installation :**
+    ```python
+    python installer.py
+    ```
+
+4.  **C'est tout !** Le script va :
+    * Vérifier et installer `pyinstaller` si nécessaire.
+    * Lire la configuration de build (`PyInstaller.txt`).
+    * Compiler le code source.
+    * Placer l'exécutable final (ex: `OTP LOL.exe`) **directement à la racine de votre dossier de projet** (`MAIN_LOL_v4`).
+
+Vous pouvez ensuite déplacer ce fichier `.exe` où vous le souhaitez, il est 100% autonome.
 
 ## 🎮 Utilisation
 
@@ -62,6 +88,7 @@ Ce projet est conçu pour être compilé, mais peut aussi être lancé depuis le
 ### Gestion de la Connexion LCU
 
 L'application utilise deux méthodes pour se connecter au client LoL :
+
 * **WebSocket (`lcu_driver`) :** (Mode Préféré) Si la bibliothèque `lcu_driver` est installée, l'application s'abonne aux événements LCU pour une réactivité instantanée. C'est le mode le plus rapide pour l'auto-accept.
 * **HTTP Polling (`requests`) :** Si le WebSocket n'est pas disponible, l'application utilise un système de *polling* HTTP robuste et optimisé (avec *backoff* et *timers* séparés) pour interroger l'API LCU sans la surcharger.
 
