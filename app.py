@@ -13,12 +13,13 @@ Ce programme automatise plusieurs actions dans League of Legends :
 - Timers/backoff dédiés par endpoint
 - Anti-spam pour les notifications GameStart
 
---- NOUVELLES FONCTIONNALITÉS (v4.5 Gemini Modifiée) ---
+--- NOUVELLES FONCTIONNALITÉS (v5.0 Gemini Modifiée) ---
 - Importateur de Runes Meta (via Runeforge.gg)
 - Automatisation Post-Game (Rejouer auto)
+- Refonte UI des paramètres (runes/région)
 
-Auteur: Qurnt1 (mis à jour par Gemini)
-Version: 4.7 (Refonte des liens opgg et porofessor, le son ne se joue plus qu'une fois par partie acceptée)
+Auteur: Qurnt1 (modifié par Gemini v5)
+Version: 4.9 (Changements runes et région auto)
 """
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ DEFAULT_PARAMS = {
     
     # NOUVEAU (v4.5): Features 2, 3, 4 (Modifié: Honneur et Mates retirés)
     "auto_play_again_enabled": False,
-    "auto_meta_runes_enabled": True,
+    "auto_meta_runes_enabled": True, # MODIFIÉ v5: Désormais séparé
 }
 
 REGION_LIST = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
@@ -443,7 +444,7 @@ class SettingsWindow:
         
         # NOUVEAU (v4.5): Features 2, 3, 4 (Modifié)
         self.play_again_var = tk.BooleanVar(value=parent.auto_play_again_enabled)
-        self.meta_runes_var = tk.BooleanVar(value=parent.auto_meta_runes_enabled)
+        self.meta_runes_var = tk.BooleanVar(value=parent.auto_meta_runes_enabled) # MODIFIÉ v5: Séparé
 
         # Listes
         try:
@@ -460,6 +461,9 @@ class SettingsWindow:
         self.window.after(100, self.toggle_summoner_entry)
         self.window.after(1000, self._poll_summoner_label)
         
+    # ───────────────────────────────────────────────────────────────────────────
+    # ⬇️ MODIFIÉ v5.0 (Refonte UI)
+    # ───────────────────────────────────────────────────────────────────────────
     def create_widgets(self):
         """Crée tous les widgets dans une seule frame (sans onglets)."""
         
@@ -489,7 +493,7 @@ class SettingsWindow:
         self.ban_cb = ttk.Combobox(frame, values=self.champions, state="normal")
         self.ban_cb.set(getattr(self.parent, 'selected_ban', 'Teemo'))
         self.ban_cb.grid(row=1, column=1, sticky="we", padx=10)
-        self.ban_cb.bind("<<ComboboxSelected>>", self._validate_champ_selection) # Modifié
+        self.ban_cb.bind("<<ComboboxSelected>>", self._validate_champ_selection)
         self.ban_cb.bind("<KeyRelease>", self._on_champ_search)
         self.ban_cb.bind("<FocusOut>", self._validate_champ_selection)
         
@@ -507,7 +511,7 @@ class SettingsWindow:
         self.pick_cb_1 = ttk.Combobox(frame, values=self.champions, state="normal")
         self.pick_cb_1.set(getattr(self.parent, 'selected_pick_1', 'Garen'))
         self.pick_cb_1.grid(row=3, column=1, sticky="we", padx=10, pady=2)
-        self.pick_cb_1.bind("<<ComboboxSelected>>", self._validate_champ_selection) # Modifié
+        self.pick_cb_1.bind("<<ComboboxSelected>>", self._validate_champ_selection)
         self.pick_cb_1.bind("<KeyRelease>", self._on_champ_search)
         self.pick_cb_1.bind("<FocusOut>", self._validate_champ_selection)
 
@@ -515,7 +519,7 @@ class SettingsWindow:
         self.pick_cb_2 = ttk.Combobox(frame, values=self.champions, state="normal")
         self.pick_cb_2.set(getattr(self.parent, 'selected_pick_2', 'Lux'))
         self.pick_cb_2.grid(row=4, column=1, sticky="we", padx=10, pady=2)
-        self.pick_cb_2.bind("<<ComboboxSelected>>", self._validate_champ_selection) # Modifié
+        self.pick_cb_2.bind("<<ComboboxSelected>>", self._validate_champ_selection)
         self.pick_cb_2.bind("<KeyRelease>", self._on_champ_search)
         self.pick_cb_2.bind("<FocusOut>", self._validate_champ_selection)
 
@@ -523,48 +527,48 @@ class SettingsWindow:
         self.pick_cb_3 = ttk.Combobox(frame, values=self.champions, state="normal")
         self.pick_cb_3.set(getattr(self.parent, 'selected_pick_3', 'Ashe'))
         self.pick_cb_3.grid(row=5, column=1, sticky="we", padx=10, pady=2)
-        self.pick_cb_3.bind("<<ComboboxSelected>>", self._validate_champ_selection) # Modifié
+        self.pick_cb_3.bind("<<ComboboxSelected>>", self._validate_champ_selection)
         self.pick_cb_3.bind("<KeyRelease>", self._on_champ_search)
         self.pick_cb_3.bind("<FocusOut>", self._validate_champ_selection)
-
-        # NOUVEAU: Auto Summoners + Sorts Globaux (Rows 6-11)
+        
+        # Auto Summoners (Row 6-8)
         ttk.Checkbutton(
-            frame, text="Auto Summoners (et Runes)", 
-            variable=self.summ_var, # Renommé
-            command=lambda: setattr(self.parent, 'auto_summoners_enabled', self.summ_var.get()),
+            frame, text="Auto Summoners", # MODIFIÉ v5: Texte (sans "et Runes")
+            variable=self.summ_var,
+            command=lambda: (
+                setattr(self.parent, 'auto_summoners_enabled', self.summ_var.get()),
+                self.toggle_spells() # MODIFIÉ v5: Appel de la nouvelle fonction
+            ),
             bootstyle="primary-round-toggle"
         ).grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
         
-        # NOUVEAU (v4.5): Checkbox Meta Runes
+        ttk.Label(frame, text="Sort 1 :").grid(row=7, column=0, sticky="e", padx=(10, 5), pady=2)
+        self.spell_cb_1 = ttk.Combobox(frame, values=self.spell_list, state="readonly", width=15)
+        self.spell_cb_1.set(getattr(self.parent, 'global_spell_1'))
+        self.spell_cb_1.grid(row=7, column=1, padx=10, pady=5, sticky="we")
+        self.spell_cb_1.bind("<<ComboboxSelected>>", self._on_spell_selected)
+        
+        ttk.Label(frame, text="Sort 2 :").grid(row=8, column=0, sticky="e", padx=(10, 5), pady=2)
+        self.spell_cb_2 = ttk.Combobox(frame, values=self.spell_list, state="readonly", width=15)
+        self.spell_cb_2.set(getattr(self.parent, 'global_spell_2'))
+        self.spell_cb_2.grid(row=8, column=1, padx=10, pady=5, sticky="we")
+        self.spell_cb_2.bind("<<ComboboxSelected>>", self._on_spell_selected)
+
+        # Auto Runes (Row 9)
         ttk.Checkbutton(
-            frame, text="    ↳ Importer les runes Meta (via Runeforge.gg)", 
+            frame, text="Auto Runes (via Runeforge.gg)", # MODIFIÉ v5: Texte et non-indenté
             variable=self.meta_runes_var,
             command=lambda: setattr(self.parent, 'auto_meta_runes_enabled', self.meta_runes_var.get()),
             bootstyle="primary-round-toggle"
-        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=30, pady=(0, 5))
-        
-        ttk.Label(frame, text="Sort 1 :").grid(row=8, column=0, sticky="e", padx=(10, 5), pady=2)
-        self.spell_cb_1 = ttk.Combobox(frame, values=self.spell_list, state="readonly", width=15)
-        self.spell_cb_1.set(getattr(self.parent, 'global_spell_1'))
-        self.spell_cb_1.grid(row=8, column=1, padx=10, pady=5, sticky="we")
-        self.spell_cb_1.bind("<<ComboboxSelected>>", self._on_spell_selected)
-        
-        ttk.Label(frame, text="Sort 2 :").grid(row=9, column=0, sticky="e", padx=(10, 5), pady=2)
-        self.spell_cb_2 = ttk.Combobox(frame, values=self.spell_list, state="readonly", width=15)
-        self.spell_cb_2.set(getattr(self.parent, 'global_spell_2'))
-        self.spell_cb_2.grid(row=9, column=1, padx=10, pady=5, sticky="we")
-        self.spell_cb_2.bind("<<ComboboxSelected>>", self._on_spell_selected)
+        ).grid(row=9, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 5))
 
-        # Région (Row 10)
-        ttk.Label(frame, text="Région :", anchor="w").grid(row=10, column=0, sticky="w", padx=10, pady=5)
-        self.region_var = tk.StringVar(value=self.parent.region)
-        self.region_cb = ttk.Combobox(frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
-        self.region_cb.grid(row=10, column=1, sticky="we", padx=10)
-        self.region_cb.bind("<<ComboboxSelected>>", lambda e: setattr(self.parent, 'region', self.region_var.get()))
-
+        # --- MODIFIÉ v5: Nouvelle disposition pour Pseudo & Région (Rows 11-13) ---
+        # L'ancien Row 10 (Région) a été déplacé
+        
         # Override Pseudo (Rows 11-12)
         ttk.Checkbutton(
-            frame, text="Détection auto du pseudo", variable=self.summ_auto_var,
+            frame, text="Détection auto (Pseudo & Région)", # MODIFIÉ v5: Texte
+            variable=self.summ_auto_var,
             command=self.toggle_summoner_entry,
             bootstyle="success-round-toggle"
         ).grid(row=11, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
@@ -573,20 +577,24 @@ class SettingsWindow:
         self.summ_entry = ttk.Entry(frame, textvariable=self.summ_entry_var, state="readonly")
         self.summ_entry.grid(row=12, column=1, sticky="we", padx=10)
         
-        # NOUVEAU (v4.5): Automatisation Post-Game (Rows 13-14)
-        ttk.Separator(frame).grid(row=13, column=0, columnspan=2, sticky="we", pady=10)
+        # Région (Row 13) - MODIFIÉ v5: (Anciennement Row 10)
+        ttk.Label(frame, text="Région :", anchor="w").grid(row=13, column=0, sticky="w", padx=10, pady=5)
+        self.region_var = tk.StringVar(value=self.parent.region)
+        self.region_cb = ttk.Combobox(frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
+        self.region_cb.grid(row=13, column=1, sticky="we", padx=10)
+        self.region_cb.bind("<<ComboboxSelected>>", lambda e: setattr(self.parent, 'region', self.region_var.get()))
 
-        # (Modifié: Honneur auto retiré)
+        # --- Fin de la modification v5 ---
+
+        # Automatisation Post-Game (Rows 14-15)
+        ttk.Separator(frame).grid(row=14, column=0, columnspan=2, sticky="we", pady=(15, 10)) # MODIFIÉ v5: Row 14, pady
         
-        # (Modifié: Label changé)
         ttk.Checkbutton(
             frame, text="\"Rejouer\" automatiquement en fin de partie (skip stats)", variable=self.play_again_var,
             command=lambda: setattr(self.parent, 'auto_play_again_enabled', self.play_again_var.get()),
             bootstyle="info-round-toggle"
-        ).grid(row=14, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+        ).grid(row=15, column=0, columnspan=2, sticky="w", padx=10, pady=5) # MODIFIÉ v5: Row 15
         
-        # (Modifié: Mates OP.GG retiré)
-
         # Bouton Fermer (en dehors de la frame)
         ttk.Button(
             self.window,
@@ -597,17 +605,40 @@ class SettingsWindow:
         
         self.toggle_pick()
         self.toggle_ban()
-        self._on_spell_selected() # AJOUT v4.3: Appel initial pour filtrer les listes de sorts
-            
+        self.toggle_spells() # NOUVEL AJOUT v5: Appel initial
+        self.toggle_summoner_entry() # MODIFIÉ v5: Appel initial pour gérer la région
+        self._on_spell_selected()
+        
+    # ───────────────────────────────────────────────────────────────────────────
+    # ⬇️ MODIFIÉ v5.0 (Refonte UI)
+    # ───────────────────────────────────────────────────────────────────────────
     def toggle_summoner_entry(self):
-        """Active/Désactive le champ de saisie du pseudo."""
+        """Active/Désactive le champ de saisie du pseudo ET la région."""
         if self.summ_auto_var.get():
+            # --- Mode Auto ---
             self.summ_entry.configure(state="readonly")
+            self.region_cb.configure(state="disabled") # MODIFIÉ: Désactive la région
+            
+            # Met à jour le pseudo
             current_auto = self.parent._get_auto_summoner_name() or "(détection auto...)"
             self.summ_entry_var.set(current_auto)
+            
+            # MODIFIÉ: Met à jour la région auto-détectée
+            # Note: _platform_for_websites() traduit 'euw1' en 'euw', etc.
+            auto_region = self.parent._platform_for_websites()
+            self.region_var.set(auto_region)
+            # Sauvegarde immédiatement la région auto-détectée sur le parent
+            setattr(self.parent, 'region', auto_region) 
+            
         else:
+            # --- Mode Manuel ---
             self.summ_entry.configure(state="normal")
+            self.region_cb.configure(state="readonly") # MODIFIÉ: Réactive la région (en readonly)
+            
+            # Restaure le pseudo manuel
             self.summ_entry_var.set(self.parent.manual_summoner_name)
+            # MODIFIÉ: Restaure la région manuelle (celle en mémoire)
+            self.region_var.set(self.parent.region)
             
     def toggle_pick(self):
         """Active/Désactive les listes de pick."""
@@ -621,14 +652,36 @@ class SettingsWindow:
         new_state = "normal" if self.ban_var.get() else "disabled"
         self.ban_cb.configure(state=new_state)
                 
+    # ───────────────────────────────────────────────────────────────────────────
+    # ⬇️ NOUVEAU v5.0 (Helper pour les sorts)
+    # ───────────────────────────────────────────────────────────────────────────
+    def toggle_spells(self):
+        """Active/Désactive les listes de sorts."""
+        new_state = "readonly" if self.summ_var.get() else "disabled"
+        self.spell_cb_1.configure(state=new_state)
+        self.spell_cb_2.configure(state=new_state)
+        
+    # ───────────────────────────────────────────────────────────────────────────
+    # ⬇️ MODIFIÉ v5.0 (Refonte UI)
+    # ───────────────────────────────────────────────────────────────────────────
     def _poll_summoner_label(self):
-        """Met à jour le champ pseudo si en mode auto."""
+        """Met à jour le champ pseudo ET région si en mode auto."""
         if not self.window.winfo_exists():
             return
+            
         if self.summ_auto_var.get():
+            # Met à jour le pseudo
             current = self.parent._get_auto_summoner_name() or "(détection auto...)"
             if self.summ_entry_var.get() != current:
                 self.summ_entry_var.set(current)
+                
+            # MODIFIÉ: Met à jour la région
+            auto_region = self.parent._platform_for_websites()
+            if self.region_var.get() != auto_region:
+                self.region_var.set(auto_region)
+                # Met à jour la config parent
+                setattr(self.parent, 'region', auto_region) 
+                
         self.window.after(1000, self._poll_summoner_label)
 
     def _on_champ_search(self, event):
@@ -727,10 +780,11 @@ class SettingsWindow:
         self.parent.global_spell_1 = self.spell_cb_1.get()
         self.parent.global_spell_2 = self.spell_cb_2.get()
         
-        # Sauvegarde Pseudo
+        # Sauvegarde Pseudo & Région
         self.parent.summoner_name_auto_detect = self.summ_auto_var.get()
         if not self.summ_auto_var.get():
             self.parent.manual_summoner_name = self.summ_entry_var.get()
+            self.parent.region = self.region_var.get() # MODIFIÉ v5: Sauvegarde la région manuelle
             
         # NOUVEAU (v4.5): Sauvegarde Features 2, 3, 4 (Modifié)
         self.parent.auto_play_again_enabled = self.play_again_var.get()
@@ -766,7 +820,7 @@ class LoLAssistant:
         
         # NOUVEAU (v4.5): Features 2, 3, 4 (Modifié)
         self.auto_play_again_enabled = DEFAULT_PARAMS["auto_play_again_enabled"]
-        self.auto_meta_runes_enabled = DEFAULT_PARAMS["auto_meta_runes_enabled"]
+        self.auto_meta_runes_enabled = DEFAULT_PARAMS["auto_meta_runes_enabled"] # MODIFIÉ v5: Séparé
         
         # Logique de pseudo
         self.summoner = "" 
@@ -899,7 +953,7 @@ class LoLAssistant:
             
             # NOUVEAU (v4.5): Features 2, 3, 4 (Modifié)
             "auto_play_again_enabled": self.auto_play_again_enabled,
-            "auto_meta_runes_enabled": self.auto_meta_runes_enabled,
+            "auto_meta_runes_enabled": self.auto_meta_runes_enabled, # MODIFIÉ v5: Séparé
         }
         try:
             os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
@@ -1008,6 +1062,9 @@ class LoLAssistant:
     def _platform_for_websites(self) -> str:
         """Mappe platform_routing (euw1, na1...) vers code court (euw, na...)."""
         mapping = {"euw1":"euw","eun1":"eune","na1":"na","kr":"kr","jp1":"jp","br1":"br","la1":"lan","la2":"las","oc1":"oce","tr1":"tr","ru":"ru"}
+        # MODIFIÉ v5: Utilise la région manuelle si l'auto-détection est désactivée
+        if not self.summoner_name_auto_detect:
+            return self.region.lower()
         return mapping.get((self.platform_routing or "").lower(), "euw")
 
     def _riot_url_name(self) -> str:
@@ -1161,6 +1218,9 @@ class LoLAssistant:
                 self.platform_routing = platform
                 self.region_routing = self._platform_to_region_routing(platform)
                 self.update_status(f"🌍 Plateforme détectée : {self.platform_routing}")
+                # MODIFIÉ v5: Met à jour la région globale si en mode auto
+                if self.summoner_name_auto_detect:
+                    self.region = self._platform_for_websites()
 
     @staticmethod
     def _platform_to_region_routing(platform: str) -> str:
@@ -1338,6 +1398,9 @@ class LoLAssistant:
                 if act.get("type") == "pick" and my_pick is None: my_pick = act
         return my_pick, my_ban
 
+    # ───────────────────────────────────────────────────────────────────────────
+    # ⬇️ MODIFIÉ v5.0 (Appel aux runes/spells séparé)
+    # ───────────────────────────────────────────────────────────────────────────
     def _perform_action_patch_then_complete(self, action: dict, champion_id: int, action_kind: str, 
                                             champion_name: Optional[str] = None): # Arg 'position' retiré
         """
@@ -1378,16 +1441,27 @@ class LoLAssistant:
             elif action_kind == "PICK":
                 self.has_picked = True
                 self.update_status(f"👑 {cname} sélectionné automatiquement")
-                if self.auto_summoners_enabled and champion_name:
-                    self._set_spells_and_runes(champion_name) # Appel sans 'position'
+                
+                # MODIFIÉ v5: Appel si l'une OU l'autre des options est cochée
+                if (self.auto_summoners_enabled or self.auto_meta_runes_enabled) and champion_name:
+                    self._set_spells_and_runes(champion_name)
 
     # ── Auto Spells & Runes (Mise à jour pour Sorts Globaux) ──────────────
 
+    # ───────────────────────────────────────────────────────────────────────────
+    # ⬇️ MODIFIÉ v5.0 (Logique de runes/spells séparée)
+    # ───────────────────────────────────────────────────────────────────────────
     def _set_spells_and_runes(self, champion_name: str): # Arg 'position' retiré
         def task():
             try:
-                self._set_spells() # Appel sans 'position'
-                self._set_runes(champion_name)
+                # MODIFIÉ: Vérifie les sorts séparément
+                if self.auto_summoners_enabled:
+                    self._set_spells() # Appel sans 'position'
+                
+                # MODIFIÉ: Vérifie les runes séparément
+                if self.auto_meta_runes_enabled:
+                    self._set_runes(champion_name)
+                    
             except Exception as e:
                 print(f"[Runes/Spells] Erreur: {e}")
         Thread(target=task, daemon=True).start()
@@ -1412,42 +1486,20 @@ class LoLAssistant:
 
     # --- NOUVEAU (v4.5): Logique d'import Meta Runes ---
     
-    def _set_runes_legacy(self, champion_name: str):
-        """[LEGACY] Active la page de runes si le nom correspond."""
-        all_pages = self.lcu.get_json("/lol-perks/v1/pages", timeout=4.0)
-        if not isinstance(all_pages, list):
-            self.update_status("⚠️ Impossible de lister les pages de runes.")
-            return
+    # ───────────────────────────────────────────────────────────────────────────
+    # ⬇️ SUPPRIMÉ v5.0 (La fonction _set_runes_legacy a été retirée)
+    # ───────────────────────────────────────────────────────────────────────────
 
-        target_page = next((p for p in all_pages if p['name'].lower() == champion_name.lower()), None)
-        if not target_page:
-            self.update_status(f"ℹ️ Aucune page de runes nommée '{champion_name}' trouvée.")
-            return
-            
-        page_id = target_page.get("id")
-        if target_page.get("current"):
-            self.update_status(f" runes '{champion_name}' déjà active.")
-            return
-            
-        r = self.lcu.put(
-            "/lol-perks/v1/currentpage", 
-            data=str(page_id), 
-            headers={"Content-Type": "application/json"},
-            timeout=3.0
-        )
-        if r and r.status_code < 400:
-            self.update_status(f" runes '{champion_name}' (ID {page_id}) activée !")
-        else:
-            self.update_status(f"⚠️ Échec activation page runes (HTTP {r.status_code if r else 'NA'})")
-
+    # ───────────────────────────────────────────────────────────────────────────
+    # ⬇️ MODIFIÉ v5.0 (Logique legacy retirée)
+    # ───────────────────────────────────────────────────────────────────────────
     def _set_runes(self, champion_name: str):
         """
-        Active la page de runes.
-        - Si auto_meta_runes_enabled: Tente d'importer depuis Runeforge.gg.
-        - Sinon: Tente l'ancienne logique (nom = champion).
+        Active la page de runes (via Runeforge.gg).
+        (La logique legacy a été supprimée).
         """
-        if not self.auto_meta_runes_enabled:
-            return self._set_runes_legacy(champion_name)
+        # L'ancienne vérification 'if not self.auto_meta_runes_enabled' a été supprimée.
+        # Cette fonction ne fait plus que l'import Meta.
 
         if not self.assigned_position:
             self.update_status("⚠️ Runes Meta: Rôle inconnu, import impossible.")
@@ -1560,7 +1612,7 @@ class LoLAssistant:
             import asyncio
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            # --------------------------
+           # --------------------------
 
             connector = Connector()
 
