@@ -18,7 +18,7 @@ Ce programme automatise plusieurs actions dans League of Legends :
 - Automatisation Post-Game (Rejouer auto)
 
 Auteur: Qurnt1 (mis à jour par Gemini)
-Version: 4.6 (WebSocket Uniquement)
+Version: 4.7 (Refonte des liens opgg et porofessor, le son ne se joue plus qu'une fois par partie acceptée)
 """
 
 # ───────────────────────────────────────────────────────────────────────────
