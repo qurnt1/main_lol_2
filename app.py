@@ -794,11 +794,9 @@ class LoLAssistant:
         self._last_cs_timer_fetch = 0.0
         self._cs_session_period = 0.7
         self._cs_timer_period = 0.30
-        # Cooldown son d'acceptation de game
-        self.last_ready_accept_sound_ts = 0.0
-        self.ready_accept_cooldown = 12.0
+        self.has_played_accept_sound = False
 
-
+        # Modules
         self.dd = DataDragon()
         self.dd.load() 
         self.lcu = LCUHttpClient()
@@ -1023,12 +1021,13 @@ class LoLAssistant:
     def build_opgg_url(self) -> str:
         platform = self._platform_for_websites()
         name_tag = urllib.parse.quote(self._riot_url_name())
-        return f"https://www.op.gg/summoners/{platform}/{name_tag}"
+        # CORRIGÉ: Ajout de "/lol/"
+        return f"https://www.op.gg/lol/summoners/{platform}/{name_tag}"
 
     def build_porofessor_url(self) -> str:
         platform = self._platform_for_websites()
         name_tag = urllib.parse.quote(self._riot_url_name())
-        return f"https.porofessor.gg/fr/live/{platform}/{name_tag}"
+        return f"https://porofessor.gg/fr/live/{platform}/{name_tag}"
 
     def _riot_id_display_string(self) -> Optional[str]:
         """Retourne le pseudo à utiliser (auto ou manuel)"""
@@ -1184,17 +1183,6 @@ class LoLAssistant:
             self.show_toast("🎯 Game Start !")
             self.update_status("🎯 Game Start détecté")
             self.last_game_start_notify_ts = now
-    
-    def _play_accept_sound_once(self):
-        """Joue le son d'acceptation au max une fois toutes les X secondes."""
-        now = time()
-        if now - self.last_ready_accept_sound_ts >= self.ready_accept_cooldown:
-            try:
-                pygame.mixer.Sound(resource_path("config/son.wav")).play()
-            except Exception:
-                pass
-            self.last_ready_accept_sound_ts = now
-
 
     def _reset_between_games(self):
         """Réinitialise tous les flags/états entre les parties."""
@@ -1208,8 +1196,8 @@ class LoLAssistant:
         self._last_cs_session_fetch = 0.0
         self._last_cs_timer_fetch = 0.0
         
-        # (Modifié: Flag OP.GG retiré)
-        
+        # NOUVEAU: Réinitialise le verrou du son d'acceptation
+        self.has_played_accept_sound = False        
         print("[RESET] Flags internes remis à zéro.", flush=True)
 
     def _champ_select_timer_tick(self):
@@ -1558,9 +1546,6 @@ class LoLAssistant:
         except Exception as e:
             print(f"[AutoPlayAgain] Erreur: {e}", flush=True)
 
-    # ── Mates Analysis (RETIRÉ) ───────────────────────────────────
-    # La fonction _open_team_opgg a été retirée.
-
     # ── WebSocket (Désormais obligatoire) ─────────────────────
     def _ws_loop(self):
         """
@@ -1591,7 +1576,21 @@ class LoLAssistant:
             async def on_close(connection):
                 self.ws_active = False
                 self.update_connection_indicator(False)
-                self.update_status("🛑 WebSocket déconnecté. Redémarrez.")
+                self.update_status("🛑 LoL déconnecté. Fermeture...")
+                # Planifie la fermeture de l'application sur le thread principal (Tkinter)
+                self.root.after(100, self.quit_app)
+
+            # --- NOUVEAU (CORRECTIF BUG CHANGEMENT DE COMPTE) ---
+            @connector.ws.register('/lol-login/v1/session')
+            async def _ws_login_session(connection, event):
+                """Détecte un changement de compte (login/logout)."""
+                data = event.data or {}
+                if data.get('status') == "SUCCEEDED":
+                    # Un nouveau login a eu lieu
+                    self.update_status("🔄 Changement de compte détecté. Mise à jour...")
+                    # On rafraîchit les infos joueur dans un thread pour ne pas bloquer le WS
+                    Thread(target=self._refresh_player_and_region, daemon=True).start()
+            # ---------------------------------------------------
 
             # Phase de jeu
             @connector.ws.register('/lol-gameflow/v1/gameflow-phase')
@@ -1625,11 +1624,18 @@ class LoLAssistant:
             async def _ws_ready(connection, event):
                 data = event.data or {}
                 if self.auto_accept_enabled and data.get('state') == 'InProgress':
+                    # On accepte (action LCU)
                     await connection.request('post', '/lol-matchmaking/v1/ready-check/accept')
                     self.update_status("✅ Partie acceptée automatiquement (WS) !")
-                    # Ne joue pas le son plus d'une fois toutes les 12 secondes
-                    self._play_accept_sound_once()
 
+                    # --- NOUVELLE LOGIQUE ANTI-SPAM (verrou) ---
+                    if not self.has_played_accept_sound:
+                        self.has_played_accept_sound = True # On verrouille
+                        # On joue le son
+                        try:
+                            pygame.mixer.Sound(resource_path("config/son.wav")).play()
+                        except Exception:
+                            pass
 
             # Champ select session -> tick immédiat
             @connector.ws.register('/lol-champ-select/v1/session')
@@ -1642,10 +1648,10 @@ class LoLAssistant:
             # Champ select timer -> tick immédiat
             @connector.ws.register('/lol-champ-select/v1/session/timer')
             async def _ws_cs_timer(connection, event):
-                if time() - self._last_cs_timer_fetch > 0.2:
+                  if time() - self._last_cs_timer_fetch > 0.2:
                     # MODIFIÉ (v4.5): Utilisation d'un thread
                     Thread(target=self._champ_select_timer_tick, daemon=True).start()
-                    self._last_cs_timer_fetch = time()
+                  self._last_cs_timer_fetch = time()
                 
             # Lancement (loop est déjà créé et défini)
             loop.run_until_complete(connector.start())

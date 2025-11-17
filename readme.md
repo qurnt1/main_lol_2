@@ -14,7 +14,7 @@ Un assistant de bureau pour League of Legends qui automatise les actions fastidi
 * **Auto-Spells:** Définit automatiquement vos sorts d'invocateur (Ex: Flash + Heal). Configurable globalement.
 * **Auto-Runes:** Sélectionne la page de runes si son nom correspond exactement au champion sélectionné.
 * **Liens Rapides:** Ouvre OP.GG ou Porofessor avec votre pseudo (détecté ou manuel).
-* **Détection Intelligente:** Utilise l'API LCU (via **WebSocket** si disponible, sinon **HTTP Polling**) pour une réactivité maximale.
+* **Détection Intelligente:** Utilise l'API LCU (via **WebSocket**) pour une réactivité maximale.
 
 ## 🚀 Installation (Depuis le code source)
 
@@ -45,20 +45,14 @@ Le projet inclut un script qui automatise l'ensemble du processus à l'aide de *
 
 1.  **Assurez-vous d'avoir Python** installé sur votre machine (nécessaire uniquement pour l'étape de compilation).
 
-2.  **Naviguez dans le dossier `Installer` :**
+2.  **Lancez le programme installer_en_exe.py**
     ```bash
-    cd chemin/vers/MAIN_LOL_v4/Installer
-    ```
-
-3.  **Exécutez le script d'installation :**
-    ```python
-    python installer.py
+    python installer_en_exe.py
     ```
 
 4.  **C'est tout !** Le script va :
     * Vérifier et installer `pyinstaller` si nécessaire.
-    * Lire la configuration de build (`PyInstaller.txt`).
-    * Compiler le code source.
+    * Compiler le code source (app.py) pour le transformer en fichier executable (.exe).
     * Placer l'exécutable final (ex: `OTP LOL.exe`) **directement à la racine de votre dossier de projet** (`MAIN_LOL_v4`).
 
 Vous pouvez ensuite déplacer ce fichier `.exe` où vous le souhaitez, il est 100% autonome.
