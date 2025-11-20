@@ -128,6 +128,9 @@ DEFAULT_PARAMS = {
 
     # Nouveau : masquage auto quand LoL est détecté
     "auto_hide_on_connect": True,
+
+    # Comportements divers
+    "close_app_on_lol_exit": True,
 }
 
 REGION_LIST = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
@@ -327,8 +330,11 @@ class SettingsWindow:
         self.play_again_var = tk.BooleanVar(value=parent.auto_play_again_enabled)
         self.meta_runes_var = tk.BooleanVar(value=parent.auto_meta_runes_enabled)
 
-        # Nouveau : masquage auto quand LoL est détecté
+        # Masquage auto quand LoL est détecté
         self.auto_hide_var = tk.BooleanVar(value=parent.auto_hide_on_connect)
+
+        # Comportement à la fermeture
+        self.close_on_exit_var = tk.BooleanVar(value=parent.close_app_on_lol_exit)
 
         # Listes
         try:
@@ -346,29 +352,29 @@ class SettingsWindow:
         self.window.after(1000, self._poll_summoner_label)
 
     def create_widgets(self):
-        """Crée tous les widgets dans une seule frame (sans onglets)."""
+        """Crée tous les widgets dans une seule frame avec des couleurs variées."""
 
         frame = ttk.Frame(self.window, padding=10)
         frame.pack(pady=10, padx=10, fill="both", expand=True)
         frame.columnconfigure(1, weight=1)
 
-        # Auto-Accept (Row 0)
+        # --- Auto-Accept (VERT - Success) ---
         ttk.Checkbutton(
             frame,
             text="Accepter automatiquement les parties",
             variable=self.auto_var,
             command=lambda: setattr(self.parent, 'auto_accept_enabled', self.auto_var.get()),
-            bootstyle="success-round-toggle"
+            bootstyle="success-round-toggle" # Vert
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=5)
 
-        # Auto-Ban (Row 1)
+        # --- Auto-Ban (ROUGE - Danger) ---
         ttk.Checkbutton(
             frame, text="Auto-Ban", variable=self.ban_var,
             command=lambda: (
                 setattr(self.parent, 'auto_ban_enabled', self.ban_var.get()),
                 self.toggle_ban()
             ),
-            bootstyle="warning-round-toggle"
+            bootstyle="danger-round-toggle" # Rouge (Plus logique pour un ban)
         ).grid(row=1, column=0, sticky="w", padx=10, pady=5)
 
         self.ban_cb = ttk.Combobox(frame, values=self.champions, state="normal")
@@ -378,16 +384,17 @@ class SettingsWindow:
         self.ban_cb.bind("<KeyRelease>", self._on_champ_search)
         self.ban_cb.bind("<FocusOut>", self._validate_champ_selection)
 
-        # Auto-Pick (Rows 2-5)
+        # --- Auto-Pick (BLEU CYAN - Info) ---
         ttk.Checkbutton(
             frame, text="Auto-Pick (Priorité)", variable=self.pick_var,
             command=lambda: (
                 setattr(self.parent, 'auto_pick_enabled', self.pick_var.get()),
                 self.toggle_pick()
             ),
-            bootstyle="info-round-toggle"
+            bootstyle="info-round-toggle" # Bleu Cyan
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
 
+        # Pick 1, 2, 3 (inchangé)
         ttk.Label(frame, text="Pick 1 :").grid(row=3, column=0, sticky="e", padx=(10, 5), pady=2)
         self.pick_cb_1 = ttk.Combobox(frame, values=self.champions, state="normal")
         self.pick_cb_1.set(getattr(self.parent, 'selected_pick_1', 'Garen'))
@@ -412,7 +419,7 @@ class SettingsWindow:
         self.pick_cb_3.bind("<KeyRelease>", self._on_champ_search)
         self.pick_cb_3.bind("<FocusOut>", self._validate_champ_selection)
 
-        # Auto Summoners (Row 6-8)
+        # --- Auto Summoners (ORANGE - Warning) ---
         ttk.Checkbutton(
             frame, text="Auto Summoners",
             variable=self.summ_var,
@@ -420,7 +427,7 @@ class SettingsWindow:
                 setattr(self.parent, 'auto_summoners_enabled', self.summ_var.get()),
                 self.toggle_spells()
             ),
-            bootstyle="primary-round-toggle"
+            bootstyle="warning-round-toggle" # Orange pour varier
         ).grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
 
         ttk.Label(frame, text="Sort 1 :").grid(row=7, column=0, sticky="e", padx=(10, 5), pady=2)
@@ -435,50 +442,59 @@ class SettingsWindow:
         self.spell_cb_2.grid(row=8, column=1, padx=10, pady=5, sticky="we")
         self.spell_cb_2.bind("<<ComboboxSelected>>", self._on_spell_selected)
 
-        # Auto Runes (Row 9)
+        # --- Auto Runes (BLEU FONCÉ - Primary) ---
         ttk.Checkbutton(
             frame, text="Auto Runes (via Runeforge.gg)",
             variable=self.meta_runes_var,
             command=lambda: setattr(self.parent, 'auto_meta_runes_enabled', self.meta_runes_var.get()),
-            bootstyle="primary-round-toggle"
+            bootstyle="primary-round-toggle" # Bleu standard
         ).grid(row=9, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 5))
 
-        # Override Pseudo (Rows 11-12)
+        # --- Override Pseudo (GRIS/VERT - Secondary) ---
         ttk.Checkbutton(
             frame, text="Détection auto (Pseudo & Région)",
             variable=self.summ_auto_var,
             command=self.toggle_summoner_entry,
-            bootstyle="success-round-toggle"
+            bootstyle="secondary-round-toggle" # Gris pour une option système
         ).grid(row=11, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
 
         ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=12, column=0, sticky="w", padx=10, pady=5)
         self.summ_entry = ttk.Entry(frame, textvariable=self.summ_entry_var, state="readonly")
         self.summ_entry.grid(row=12, column=1, sticky="we", padx=10)
 
-        # Région (Row 13)
         ttk.Label(frame, text="Région :", anchor="w").grid(row=13, column=0, sticky="w", padx=10, pady=5)
         self.region_var = tk.StringVar(value=self.parent.region)
         self.region_cb = ttk.Combobox(frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
         self.region_cb.grid(row=13, column=1, sticky="we", padx=10)
         self.region_cb.bind("<<ComboboxSelected>>", lambda e: setattr(self.parent, 'region', self.region_var.get()))
 
-        # Automatisation Post-Game (Rows 14-16)
+        # --- Automatisation Post-Game & Système ---
         ttk.Separator(frame).grid(row=14, column=0, columnspan=2, sticky="we", pady=(15, 10))
 
+        # Rejouer : Info (Bleu Cyan)
         ttk.Checkbutton(
-            frame, text="\"Rejouer\" automatiquement en fin de partie (skip stats)", variable=self.play_again_var,
+            frame, text="\"Rejouer\" automatiquement en fin de partie", variable=self.play_again_var,
             command=lambda: setattr(self.parent, 'auto_play_again_enabled', self.play_again_var.get()),
             bootstyle="info-round-toggle"
         ).grid(row=15, column=0, columnspan=2, sticky="w", padx=10, pady=5)
 
-        # Nouveau : masquage auto de l'app à la détection de LoL
+        # Auto-Hide : Secondary (Gris)
         ttk.Checkbutton(
             frame,
-            text="Cacher l'application quand LoL est détecté (3 secondes)",
+            text="Cacher l'application quand LoL est détecté",
             variable=self.auto_hide_var,
             command=lambda: setattr(self.parent, 'auto_hide_on_connect', self.auto_hide_var.get()),
             bootstyle="secondary-round-toggle",
         ).grid(row=16, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+
+        # Quit on Exit : Danger (Rouge)
+        ttk.Checkbutton(
+            frame,
+            text="Fermer l'application quand LoL se ferme",
+            variable=self.close_on_exit_var,
+            command=lambda: setattr(self.parent, 'close_app_on_lol_exit', self.close_on_exit_var.get()),
+            bootstyle="danger-round-toggle",
+        ).grid(row=17, column=0, columnspan=2, sticky="w", padx=10, pady=5)
 
         # Bouton Fermer
         ttk.Button(
@@ -645,6 +661,9 @@ class SettingsWindow:
         # Nouveau
         self.parent.auto_hide_on_connect = self.auto_hide_var.get()
 
+        # Comportement à la fermeture
+        self.parent.close_app_on_lol_exit = self.close_on_exit_var.get()
+
         self.parent.save_parameters()
         self.window.destroy()
 
@@ -661,7 +680,7 @@ class LoLAssistant:
         self.theme = DEFAULT_PARAMS["theme"]
         self.root = ttk.Window(themename=self.theme)
         self.root.title("MAIN LOL")
-        self.root.geometry("400x220")
+        self.root.geometry("380x180")
         self.root.resizable(False, False)
 
         # Variables d'état
@@ -679,6 +698,9 @@ class LoLAssistant:
 
         # Nouveau : masquage auto quand LoL est détecté
         self.auto_hide_on_connect = DEFAULT_PARAMS["auto_hide_on_connect"]
+
+        # Comportements divers
+        self.close_app_on_lol_exit = DEFAULT_PARAMS["close_app_on_lol_exit"]
 
         # Logique de pseudo
         self.summoner = ""
@@ -741,7 +763,7 @@ class LoLAssistant:
         except Exception as e:
             print(f"Erreur audio: {e}")
             self.sound_effect = None
-            
+
         self.create_ui()
         self.create_system_tray()
         self.setup_hotkeys()
@@ -804,6 +826,9 @@ class LoLAssistant:
         # Nouveau
         self.auto_hide_on_connect = config.get('auto_hide_on_connect', self.auto_hide_on_connect)
 
+        # Comportements divers
+        self.close_app_on_lol_exit = config.get('close_app_on_lol_exit', self.close_app_on_lol_exit)
+
     def save_parameters(self):
         """Sauvegarde les paramètres dans parameters.json."""
         config = {
@@ -830,6 +855,9 @@ class LoLAssistant:
 
             # Nouveau
             "auto_hide_on_connect": self.auto_hide_on_connect,
+
+            # Comportements divers
+            "close_app_on_lol_exit": self.close_app_on_lol_exit,
         }
         try:
             os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
@@ -908,11 +936,13 @@ class LoLAssistant:
         opgg_btn = ttk.Button(
             self.root,
             text="📊 OP.GG",
-            bootstyle="success-outline-toolbutton",
-            padding=10,
+            bootstyle="success-outline", 
+            padding=(20, 10),            
+            width=15,                    
             command=open_opgg
         )
         opgg_btn.place(relx=0.5, rely=0.75, anchor="center")
+
         try:
             ToolTip(opgg_btn, text="Voir votre profil OP.GG")
         except Exception:
@@ -1545,8 +1575,15 @@ class LoLAssistant:
                 self.connection = None
                 self.ws_active = False
                 self.update_connection_indicator(False)
-                self.update_status("🛑 LoL déconnecté. Fermeture...")
-                self.root.after(100, self.quit_app)
+                self.update_status("🛑 LoL déconnecté.") # J'ai retiré "Fermeture..." du texte
+
+                # MODIFICATION ICI :
+                if self.close_app_on_lol_exit:
+                    print("Fermeture automatique demandée.")
+                    self.root.after(100, self.quit_app)
+                else:
+                    # Si l'option est désactivée, on réaffiche juste la fenêtre si elle était cachée
+                    self.root.after(100, self.show_window)
 
             @connector.ws.register('/lol-login/v1/session')
             async def _ws_login_session(connection, event):
