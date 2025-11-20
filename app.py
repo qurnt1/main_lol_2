@@ -467,7 +467,7 @@ class SettingsWindow:
         # Nouveau : masquage auto de l'app à la détection de LoL
         ttk.Checkbutton(
             frame,
-            text="Masquer automatiquement MAIN LOL quand LoL est détecté",
+            text="Cacher l'application quand LoL est détecté (3 secondes)",
             variable=self.auto_hide_var,
             command=lambda: setattr(self.parent, 'auto_hide_on_connect', self.auto_hide_var.get()),
             bootstyle="secondary-round-toggle",
@@ -1484,7 +1484,7 @@ class LoLAssistant:
         try:
             r = await self.connection.request('post', "/lol-lobby/v2/play-again")
             if r and r.status < 400:
-                self.update_status("Rejouer auto (skip stats) réussi.")
+                self.update_status("Skip les stats automatiquement (fin de partie).")
             else:
                 self.update_status(f"⚠️ Échec Rejouer auto (HTTP {r.status if r else 'NA'})")
         except Exception as e:
