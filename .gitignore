@@ -1,2 +1,6 @@
 # Ignore le dossier "OTP LOL" et tout son contenu
 OTP LOL/
+
+# Fichiers exécutables spécifiques à ignorer
+OTP LOL.exe
+*.exe
