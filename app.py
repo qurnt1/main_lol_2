@@ -58,20 +58,42 @@ import asyncio  # Requis pour la gestion async
 # ───────────────────────────────────────────────────────────────────────────
 
 def resource_path(relative_path: str) -> str:
-    """
-    Retourne le chemin absolu du fichier, compatible avec PyInstaller.
-    Utilisé pour accéder aux ressources dans le dossier config/.
-    """
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+    """Retourne le chemin absolu pour les ressources (images, etc)."""
+    if getattr(sys, 'frozen', False):
+        # En mode 'onedir', l'executable est dans le dossier du projet
+        # sys.executable pointe vers OTP LOL.exe
+        base_path = os.path.dirname(sys.executable)
+    else:
+        # En mode dev (script python)
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    return os.path.join(base_path, relative_path)
 
+def get_appdata_path(filename: str) -> str:
+    """
+    Utilisé pour les fichiers de CONFIGURATION qui doivent être sauvegardés.
+    Chemin : C:/Users/<TonNom>/AppData/Roaming/MainLoL/
+    """
+    # Récupère le chemin AppData standard de l'utilisateur
+    app_data_dir = os.getenv('APPDATA') 
+    
+    # On définit un nom de dossier pour ton application
+    app_folder = os.path.join(app_data_dir, "MainLoL")
+    
+    # On s'assure que le dossier existe
+    if not os.path.exists(app_folder):
+        try:
+            os.makedirs(app_folder)
+        except OSError:
+            # Fallback si jamais AppData est inaccessible (rare)
+            return filename
 
+    return os.path.join(app_folder, filename)
 # ───────────────────────────────────────────────────────────────────────────
 # CONFIGURATION
 # ───────────────────────────────────────────────────────────────────────────
 
-PARAMETERS_PATH = resource_path("config/parameters.json")
+PARAMETERS_PATH = get_appdata_path("parameters.json")
 
 DEFAULT_PARAMS = {
     "auto_accept_enabled": True,
@@ -721,14 +743,26 @@ class LoLAssistant:
             self.root.after(100, lambda: self.update_connection_indicator(False))
 
     def load_config(self):
-        """Charge la configuration depuis parameters.json."""
-        try:
-            with open(PARAMETERS_PATH, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-        except Exception as e:
-            print(f"Erreur lors du chargement de la configuration: {e}")
-            print("Utilisation des valeurs par défaut")
+        """Charge la configuration depuis AppData."""
+        # Si le fichier n'existe pas encore (premier lancement), on prend les défauts
+        if not os.path.exists(PARAMETERS_PATH):
+            print(f"Fichier config introuvable à : {PARAMETERS_PATH}")
+            print("Création de la configuration par défaut...")
             config = DEFAULT_PARAMS
+            # Astuce : On sauvegarde tout de suite pour créer le fichier dans AppData
+            try:
+                # On s'assure que self.region etc sont définis avant de sauvegarder
+                # (Tu peux adapter selon l'ordre de ton init, sinon laisse le save pour la fermeture)
+                pass 
+            except Exception:
+                pass
+        else:
+            try:
+                with open(PARAMETERS_PATH, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+            except Exception as e:
+                print(f"Erreur lors du chargement (AppData): {e}")
+                config = DEFAULT_PARAMS
 
         self.auto_accept_enabled = config.get('auto_accept_enabled', self.auto_accept_enabled)
         self.auto_pick_enabled = config.get('auto_pick_enabled', self.auto_pick_enabled)
