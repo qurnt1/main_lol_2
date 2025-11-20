@@ -1,4 +1,4 @@
-# 🛡️ MAIN LOL - Assistant pour League of Legends (v4.4)
+# 🛡️ MAIN LOL - Assistant pour League of Legends (v4.9)
 
 ![Version](https://img.shields.io/badge/version-v4.9-blue.svg)
 ![Python](https://img.shields.io/badge/Python-3.9+-green.svg)
@@ -8,21 +8,20 @@ Un assistant de bureau pour League of Legends qui automatise les actions fastidi
 
 ## ✨ Fonctionnalités Principales
 
-* **Auto-Accept:** Accepte automatiquement les parties dès qu'elles sont trouvées.
-* **Auto-Ban:** BANNIT automatiquement et valide le champion de votre choix.
-* **Auto-Pick (Priorité):** PICK votre champion par ordre de priorité (P1, P2, P3). Si P1 n'est pas disponible, il tente P2, puis P3.
-* **Auto-Spells:** Définit automatiquement vos sorts d'invocateur (Ex: Flash + Heal). Configurable globalement.
-* **Auto-Runes:** Sélectionne la page de runes si son nom correspond exactement au champion sélectionné.
-* **Liens Rapides:** Ouvre OP.GG ou Porofessor avec votre pseudo (détecté ou manuel).
-* **Détection Intelligente:** Utilise l'API LCU (via **WebSocket**) pour une réactivité maximale.
+* **Auto-Accept :** Accepte automatiquement la partie dès qu'elle est trouvée.
+* **Auto-Pick (Priorité) :** Tente de sécuriser vos champions préférés par ordre de priorité (P1, P2, P3).
+* **Auto-Ban :** Bannit automatiquement le champion que vous détestez (validation incluse).
+* **Auto-Spells :** Assigne automatiquement vos sorts d'invocateur (Ex: Flash sur F).
+* **Auto-Runes (Méta) :** Importe automatiquement les meilleures runes pour votre champion et votre rôle via **Runeforge.gg**.
+* **Auto-Replay :** Clique automatiquement sur "Rejouer" à la fin de la partie (skip des stats).
+* **Mode Discret :** L'application peut se masquer automatiquement dès que le client LoL est détecté.
+* **Liens Rapides :** Accès direct à OP.GG ou Porofessor avec détection automatique de votre pseudo/région.
 
 ## 🚀 Installation (Depuis le code source)
 
-Ce projet est conçu pour être compilé, mais peut aussi être lancé depuis le code source.
-
 1.  **Clonez le dépôt :**
     ```bash
-    git clone https://github.com/qurnt1/main_lol.git
+    git clone [https://github.com/qurnt1/main_lol.git](https://github.com/qurnt1/main_lol.git)
     cd MAIN_LOL_v4
     ```
 
@@ -34,64 +33,60 @@ Ce projet est conçu pour être compilé, mais peut aussi être lancé depuis le
 
 3.  **Lancez l'application :**
     ```python
-    python main.py
+    python app.py
     ```
 
-## 📦 Compilation (Créer le .exe)
+## 📦 Compilation (Créer l'application portable)
 
-Si vous préférez utiliser l'application comme un programme indépendant sans avoir besoin d'installer Python ou des dépendances sur d'autres machines, vous pouvez la compiler en un fichier `.exe` unique.
+Ce projet inclut un script de construction intelligent utilisant **PyInstaller**.
+L'application est compilée en **mode dossier (OneDir)** pour un démarrage instantané et une meilleure stabilité.
 
-Le projet inclut un script qui automatise l'ensemble du processus à l'aide de **PyInstaller**.
+1.  **Assurez-vous d'avoir Python** installé sur votre machine.
 
-1.  **Assurez-vous d'avoir Python** installé sur votre machine (nécessaire uniquement pour l'étape de compilation).
-
-2.  **Lancez le programme installer_en_exe.py**
+2.  **Lancez le script de construction :**
     ```bash
     python installer_en_exe.py
     ```
 
-4.  **C'est tout !** Le script va :
-    * Vérifier et installer `pyinstaller` si nécessaire.
-    * Compiler le code source (app.py) pour le transformer en fichier executable (.exe).
-    * Placer l'exécutable final (ex: `OTP LOL.exe`) **directement à la racine de votre dossier de projet** (`MAIN_LOL_v4`).
+3.  **C'est tout !** Le script va :
+    * Installer `pyinstaller` si nécessaire.
+    * Compiler le code et inclure les ressources (images, configs par défaut).
+    * Créer un dossier nommé **`OTP LOL`** à la racine du projet.
 
-Vous pouvez ensuite déplacer ce fichier `.exe` où vous le souhaitez, il est 100% autonome.
+👉 **Pour lancer l'app :** Ouvrez le dossier `OTP LOL` et lancez `OTP LOL.exe`.
+Vous pouvez déplacer ce dossier entier où vous voulez (sur une clé USB, un autre disque, etc.).
+
+## 💾 Sauvegarde des Paramètres
+
+Pour garantir que vos réglages ne soient jamais perdus (même si vous mettez à jour l'application), la configuration est sauvegardée dans le dossier utilisateur de Windows :
+
+* **Emplacement :** `%APPDATA%\MainLoL\parameters.json`
+    *(Généralement : `C:\Users\VotreNom\AppData\Roaming\MainLoL`)*
+
+Les images et ressources visuelles restent contenues dans le dossier de l'application.
 
 ## 🎮 Utilisation
 
-1.  Lancez `main.py` (ou l'exécutable `.exe` si vous l'avez compilé).
-2.  L'application démarre et attend que le client League of Legends (`LeagueClientUx.exe`) soit lancé.
-3.  Une fois le client détecté (point vert 🟢), l'application se réduit dans la barre des tâches (system tray).
-4.  Cliquez sur l'icône "Engrenage" (⚙️) dans l'application ou faites un clic droit sur l'icône dans la barre des tâches pour ouvrir les **Paramètres**.
-5.  Configurez vos picks, bans, sorts et options.
-6.  C'est tout ! L'application gérera la prochaine Champ Select pour vous.
+1.  Lancez `OTP LOL.exe`.
+2.  L'application attend que le client League of Legends soit ouvert.
+3.  **Statut :**
+    * 🔴 **Rouge :** En attente de LoL.
+    * 🟢 **Vert :** Connecté au WebSocket LCU (Réactivité maximale).
+4.  **Configuration :** Cliquez sur l'icône ⚙️ (Engrenage) pour régler vos picks, bans et activer les runes auto.
+5.  L'application peut être réduite dans la zone de notification (System Tray) pour ne pas encombrer votre écran.
 
 ## ⌨️ Raccourcis Clavier
 
 * `Alt + P` : Ouvre votre profil **Porofessor** dans le navigateur.
 * `Alt + C` : Affiche / Masque la fenêtre principale de l'application.
 
-## 🛠️ Fonctionnalités Détaillées
+## 🛠️ Fonctionnalités Techniques
 
-### Gestion de la Connexion LCU
-
-L'application utilise un WebSocket pour se connecter au client LoL :
-
-* **WebSocket (`lcu_driver`) :** Si la bibliothèque `lcu_driver` est installée, l'application s'abonne aux événements LCU (League Client Updates) pour une réactivité instantanée. C'est le mode le plus rapide pour l'auto-accept.
-
-### Configuration
-
-* Tous vos paramètres sont sauvegardés dans `config/parameters.json`.
-* L'application utilise **DataDragon** (l'API statique de Riot) pour récupérer les ID des champions et les met en cache (`tempfile`) pour un démarrage plus rapide.
-* **Détection de Pseudo :** L'application peut détecter automatiquement votre Riot ID (Pseudo#TAG) ou vous pouvez le définir manuellement pour les liens externes.
-
-### Interface
-
-* Construite avec `ttkbootstrap` pour une interface moderne et thématique (le thème "darkly" est utilisé par défaut).
-* Fonctionne en arrière-plan grâce à `pystray`, ne vous dérangeant que lorsque c'est nécessaire.
-* L'application s'assure qu'une seule instance est lancée à la fois en utilisant un fichier `.lock`.
+* **WebSocket LCU :** Utilise `lcu_driver` pour une communication temps réel avec le client (plus rapide que la détection d'image ou le polling HTTP classique).
+* **DataDragon :** Mise en cache locale des données des champions pour réduire les appels API.
+* **Architecture Async :** Utilise `asyncio` et `aiohttp` pour gérer les requêtes externes (Runeforge) sans bloquer l'interface.
 
 ## 🧑‍💻 Auteur
 
 * **Qurnt1** (Développeur principal)
-* Mis à jour et assisté par Gemini.
+* Assisté par Gemini.
