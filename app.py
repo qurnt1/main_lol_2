@@ -58,15 +58,22 @@ import asyncio  # Requis pour la gestion async
 # ───────────────────────────────────────────────────────────────────────────
 
 def resource_path(relative_path: str) -> str:
-    """Retourne le chemin absolu pour les ressources (images, etc)."""
-    if getattr(sys, 'frozen', False):
-        # En mode 'onedir', l'executable est dans le dossier du projet
-        # sys.executable pointe vers OTP LOL.exe
-        base_path = os.path.dirname(sys.executable)
+    """
+    Retourne le chemin absolu pour les ressources EMBARQUÉES (Images, Sons).
+    Gère le cas du --onefile (dossier temporaire _MEIPASS).
+    """
+    # PyInstaller crée un dossier temp _MEIPASS pour le onefile
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
     else:
-        # En mode dev (script python)
         base_path = os.path.dirname(os.path.abspath(__file__))
     
+    # Nettoyage des ./
+    if relative_path.startswith("./"):
+        relative_path = relative_path[2:]
+    elif relative_path.startswith(".\\"):
+        relative_path = relative_path[2:]
+        
     return os.path.join(base_path, relative_path)
 
 def get_appdata_path(filename: str) -> str:
@@ -654,7 +661,7 @@ class LoLAssistant:
         self.theme = DEFAULT_PARAMS["theme"]
         self.root = ttk.Window(themename=self.theme)
         self.root.title("MAIN LOL")
-        self.root.geometry("360x180")
+        self.root.geometry("400x220")
         self.root.resizable(False, False)
 
         # Variables d'état
@@ -729,8 +736,12 @@ class LoLAssistant:
 
         try:
             pygame.mixer.init()
-        except Exception:
-            pass
+            # On pré-charge le son pour vérifier qu'il marche
+            self.sound_effect = pygame.mixer.Sound(resource_path("config/son.wav"))
+        except Exception as e:
+            print(f"Erreur audio: {e}")
+            self.sound_effect = None
+            
         self.create_ui()
         self.create_system_tray()
         self.setup_hotkeys()
@@ -857,7 +868,9 @@ class LoLAssistant:
         self.status_label = ttk.Label(
             self.root,
             text="🔌 En attente du WebSocket LCU...",
-            style="Status.TLabel"
+            style="Status.TLabel",
+            justify="center",      # Centre le texte
+            wraplength=380         # Force le retour à la ligne si > 380px
         )
         self.status_label.place(relx=0.5, rely=0.38, anchor="center")
 
@@ -1349,7 +1362,7 @@ class LoLAssistant:
             # Sorts + runes après un pick réussi
             if (self.auto_summoners_enabled or self.auto_meta_runes_enabled) and champion_name:
                 print(f"[{action_kind}] [DEBUG] Appel de _set_spells_and_runes pour {champion_name}...")
-                await self._set_spells_and_runes(champion_name)
+                asyncio.create_task(self._set_spells_and_runes(champion_name))
 
     # ── Auto Spells & Runes ──────────────────────────────
 
@@ -1470,12 +1483,23 @@ class LoLAssistant:
     # ── Post-Game ─────────────────────────
 
     async def _handle_post_game(self):
-        """Tâche de fond async pour gérer les actions post-game."""
+        """Tente de cliquer sur rejouer plusieurs fois."""
         print("[Post-Game] Détection de fin de partie.", flush=True)
-        await asyncio.sleep(2.5)
+        
+        if not self.auto_play_again_enabled:
+            return
 
-        if self.auto_play_again_enabled:
-            await self._auto_play_again()
+        # On essaie 3 fois avec 2 secondes d'intervalle
+        for i in range(3):
+            await asyncio.sleep(2)
+            if self.current_phase not in ["EndOfGame", "WaitingForStats"]:
+                break # On a quitté le lobby, on arrête
+                
+            print(f"[Post-Game] Tentative Rejouer {i+1}/3...")
+            r = await self.connection.request('post', "/lol-lobby/v2/play-again")
+            if r and r.status < 400:
+                self.update_status("✅ Rejouer auto réussi !")
+                break
 
     async def _auto_play_again(self):
         """Tente de cliquer sur 'Rejouer' (async)."""
@@ -1563,8 +1587,15 @@ class LoLAssistant:
             # Ready-check
             @connector.ws.register('/lol-matchmaking/v1/ready-check')
             async def _ws_ready(connection, event):
+                # CORRECTION : Si on est déjà en ChampSelect ou GameStart, on ignore le ReadyCheck
+                # Cela empêche le son de se jouer une 2ème fois lors de la transition.
+                if self.current_phase not in ["Matchmaking", "ReadyCheck", "None", "Lobby"]:
+                    return
+
                 data = event.data or {}
-                if self.auto_accept_enabled and data.get('state') == 'InProgress':
+                
+                # On vérifie aussi 'playerResponse' pour ne pas spammer si on a déjà accepté
+                if self.auto_accept_enabled and data.get('state') == 'InProgress' and data.get('playerResponse') != 'Accepted':
                     await connection.request('post', '/lol-matchmaking/v1/ready-check/accept')
                     self.update_status("✅ Partie acceptée automatiquement (WS) !")
 
