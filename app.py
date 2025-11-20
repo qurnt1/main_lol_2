@@ -14,7 +14,7 @@ Ce programme automatise plusieurs actions dans League of Legends :
 - Anti-spam pour les notifications GameStart
 
 --- NOUVELLES FONCTIONNALITÉS ---
-- Importateur de Runes Meta (via Runeforge.gg)
+- Importateur de Runes Meta
 - Automatisation Post-Game (Rejouer auto)
 - Refonte UI des paramètres (runes/région)
 - Masquage automatique de l’app à la détection de LoL (optionnel)
@@ -49,7 +49,6 @@ import re
 import unicodedata
 from typing import Optional, Dict, Any, List, Tuple
 from lcu_driver import Connector
-import aiohttp  # Requis pour les requêtes async externes (Runeforge)
 import asyncio  # Requis pour la gestion async
 
 
@@ -444,7 +443,7 @@ class SettingsWindow:
 
         # --- Auto Runes (BLEU FONCÉ - Primary) ---
         ttk.Checkbutton(
-            frame, text="Auto Runes (via Runeforge.gg)",
+            frame, text="Auto Runes (via LCU)",
             variable=self.meta_runes_var,
             command=lambda: setattr(self.parent, 'auto_meta_runes_enabled', self.meta_runes_var.get()),
             bootstyle="primary-round-toggle" # Bleu standard
@@ -1429,86 +1428,96 @@ class LoLAssistant:
 
     async def _set_runes(self, champion_name: str):
         """
-        Active la page de runes (via Runeforge.gg) (async).
-        Utilise aiohttp pour la requête externe et lcu_driver pour l'API LCU.
+        Applique les runes recommandées par Riot (LCU) pour le champion.
+        Plus stable car ne dépend pas d'un site externe (Runeforge).
         """
         if not self.connection:
             return
 
-        if not self.assigned_position:
-            self.update_status("⚠️ Runes Meta: Rôle inconnu, import impossible.")
+        # 1. On a besoin de l'ID du champion et du rôle
+        champ_id = self.dd.resolve_champion(champion_name)
+        if not champ_id:
+            print(f"[Runes] Champion {champion_name} introuvable.")
             return
 
+        # On mappe le rôle détecté (ex: "BOTTOM") vers le format Riot (ex: "BOTTOM")
+        # Riot utilise : TOP, JUNGLE, MIDDLE, BOTTOM, UTILITY
+        position = (self.assigned_position or "").upper()
+        if position == "ADC": position = "BOTTOM"
+        if position == "SUPPORT": position = "UTILITY"
+        
+        if not position:
+            self.update_status("⚠️ Runes : Rôle non détecté, impossible d'importer.")
+            return
+
+        self.update_status(f"🔮 Runes : Recherche page Riot pour {champion_name} ({position})...")
+
         try:
-            champ_slug = self.dd.by_id[self.dd.resolve_champion(champion_name)]['id'].lower()
-        except Exception:
-            champ_slug = champion_name.lower().replace(" ", "")
-
-        role = self.assigned_position.lower()
-        if role == "utility":
-            role = "support"
-        if role == "bottom":
-            role = "adc"
-
-        self.update_status(f" runes Meta: Recherche pour {champ_slug} ({role})...")
-
-        try:
-            url = f"https://runeforge.gg/api/v1/runes/{champ_slug}/{role}"
-
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=5) as resp:
-                    if resp.status != 200:
-                        self.update_status(f"⚠️ Runes Meta: API indisponible (HTTP {resp.status})")
-                        return
-                    data = await resp.json()
-
-            if not data.get('build'):
-                self.update_status("⚠️ Runes Meta: Aucune rune trouvée pour ce rôle.")
+            # 2. On récupère les pages recommandées stockées DANS le client
+            # Ce endpoint contient les pages que Riot propose dans l'interface
+            r = await self.connection.request('get', f"/lol-perks/v1/recommended-pages/champion/{champ_id}/position/{position}")
+            
+            if r.status != 200:
+                self.update_status(f"⚠️ Pas de recommandation Riot trouvée (HTTP {r.status})")
                 return
-
+            
+            rec_pages = await r.json()
+            
+            # On prend la première page (souvent la "Standard" ou la plus populaire)
+            if not rec_pages or len(rec_pages) == 0:
+                self.update_status("⚠️ Aucune page recommandée trouvée.")
+                return
+            
+            target_page = rec_pages[0] # Le premier choix
+            
+            # 3. On prépare la nouvelle page
+            # On utilise "primaryPerkStyleId" au lieu de "primaryStyleId" selon le format de ce endpoint spécifique
             payload = {
-                "name": f"Meta {champion_name[:10]} ({role})",
-                "primaryStyleId": data['build']['primaryStyleId'],
-                "subStyleId": data['build']['subStyleId'],
-                "selectedPerkIds": data['build']['perks'],
+                "name": f"Auto {champion_name} ({position})",
+                "primaryStyleId": target_page.get("primaryPerkStyleId"),
+                "subStyleId": target_page.get("subPerkStyleId"),
+                "selectedPerkIds": target_page.get("selectedPerkIds"),
                 "current": True
             }
 
-            all_pages = None
-            resp_pages = await self.connection.request('get', "/lol-perks/v1/pages")
-            if resp_pages.status == 200:
-                all_pages = await resp_pages.json()
+            # 4. Suppression/Création comme avant
+            # On liste les pages actuelles pour voir si on doit écraser
+            pages_resp = await self.connection.request('get', "/lol-perks/v1/pages")
+            all_pages = await pages_resp.json()
+            
+            # On cherche une page éditable existante qui commence par "Auto "
+            existing_page_id = None
+            for p in all_pages:
+                if p.get("name", "").startswith("Auto ") and p.get("isEditable"):
+                    existing_page_id = p.get("id")
+                    break
 
-            if not isinstance(all_pages, list):
-                self.update_status("⚠️ Runes Meta: Erreur listage pages LCU.")
-                return
-
-            meta_page = next((p for p in all_pages if p.get('name', '').startswith("Meta ") and p.get('isEditable', False)), None)
-
-            page_id = None
-            if meta_page:
-                page_id = meta_page.get('id')
-                r = await self.connection.request('put', f"/lol-perks/v1/pages/{page_id}", json=payload)
+            if existing_page_id:
+                # On met à jour la page existante
+                await self.connection.request('put', f"/lol-perks/v1/pages/{existing_page_id}", json=payload)
+                final_id = existing_page_id
             else:
-                r = await self.connection.request('post', "/lol-perks/v1/pages", json=payload)
-                if r and r.status < 400:
-                    new_page_data = await r.json()
-                    page_id = new_page_data.get('id')
-                else:
-                    self.update_status(f"⚠️ Runes Meta: Erreur création page (HTTP {r.status if r else 'NA'})")
+                # On crée une nouvelle page
+                create_resp = await self.connection.request('post', "/lol-perks/v1/pages", json=payload)
+                if create_resp.status >= 400:
+                    # Si on ne peut pas créer (souvent parce qu'on a trop de pages), on supprime la première page éditable et on réessaie
+                    first_editable = next((p for p in all_pages if p.get("isEditable")), None)
+                    if first_editable:
+                        await self.connection.request('delete', f"/lol-perks/v1/pages/{first_editable['id']}")
+                        create_resp = await self.connection.request('post', "/lol-perks/v1/pages", json=payload)
+                
+                new_page = await create_resp.json()
+                final_id = new_page.get("id")
 
-            if page_id:
-                await self.connection.request('put', "/lol-perks/v1/currentpage",
-                                              data=str(page_id),
-                                              headers={"Content-Type": "application/json"})
-                self.update_status(f" runes Meta importées pour {champion_name} !")
+            # 5. Activation
+            if final_id:
+                await self.connection.request('put', "/lol-perks/v1/currentpage", data=str(final_id))
+                self.update_status(f"✅ Runes appliquées pour {champion_name} !")
 
-        except aiohttp.ClientError as e:
-            self.update_status("⚠️ Runes Meta: Échec connexion API Runeforge.")
-            print(f"[MetaRunes] Erreur: {e}", flush=True)
         except Exception as e:
-            self.update_status("⚠️ Runes Meta: Erreur inconnue.")
-            print(f"[MetaRunes] Erreur: {e}", flush=True)
+            print(f"[Runes] Erreur : {e}")
+            self.update_status("⚠️ Erreur lors de l'application des runes.")
+
 
     # ── Post-Game ─────────────────────────
 
