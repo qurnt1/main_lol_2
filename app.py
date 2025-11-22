@@ -78,7 +78,7 @@ DEFAULT_PARAMS = {
     "region": "euw",
     "theme": "darkly",
     "summoner_name_auto_detect": True,
-    "manual_summoner_name": "VotrePseudo#EUW",
+    "manual_summoner_name": "VotrePseudo#VotreTag",
     "global_spell_1": "Heal",
     "global_spell_2": "Flash",
     "auto_play_again_enabled": False,
