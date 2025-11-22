@@ -319,7 +319,9 @@ class SettingsWindow:
         self.parent = parent
         self.window = ttk.Toplevel(parent.root)
         self.window.title("Paramètres - MAIN LOL")
-        self.window.geometry("500x680") # Légèrement ajusté
+        
+        # CORRECTION 1 : Hauteur augmentée (680 -> 750)
+        self.window.geometry("500x750") 
         self.window.resizable(False, False)
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -348,7 +350,6 @@ class SettingsWindow:
             print(f"Erreur DD load: {e}")
             self.all_champions = ["Garen", "Teemo", "Ashe"]
 
-        self.champions = self.all_champions[:]
         self.spell_list = SUMMONER_SPELL_LIST[:]
 
         self.create_widgets()
@@ -359,195 +360,326 @@ class SettingsWindow:
         frame = ttk.Frame(self.window, padding=15)
         frame.pack(fill="both", expand=True)
         
-        # CORRECTION UI : On donne du poids à la colonne 2 (Input) mais pas trop
-        # Colonne 0 : Image (fixe)
-        # Colonne 1 : Label (fixe, aligné droite)
-        # Colonne 2 : Input (prend le reste, aligné gauche)
-        frame.columnconfigure(0, weight=0)
-        frame.columnconfigure(1, weight=0)
-        frame.columnconfigure(2, weight=1) 
+        frame.columnconfigure(0, weight=0) 
+        frame.columnconfigure(1, weight=1) 
 
-        # --- Auto-Accept ---
+        # --- ROW 0 : Auto-Accept ---
         ttk.Checkbutton(
             frame, text="Accepter automatiquement les parties", variable=self.auto_var,
             command=lambda: setattr(self.parent, 'auto_accept_enabled', self.auto_var.get()),
             bootstyle="success-round-toggle"
-        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=5)
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=5)
 
-        # --- Auto-Ban ---
-        self.lbl_img_ban = ttk.Label(frame)
-        self.lbl_img_ban.grid(row=1, column=0, padx=(0, 5), pady=5, sticky="e")
-
-        ttk.Checkbutton(
-            frame, text="Auto-Ban", variable=self.ban_var,
-            command=lambda: (setattr(self.parent, 'auto_ban_enabled', self.ban_var.get()), self.toggle_ban()),
-            bootstyle="danger-round-toggle"
-        ).grid(row=1, column=1, sticky="w", padx=5, pady=5)
-
-        self.ban_cb = ttk.Combobox(frame, values=self.champions, state="normal")
-        self.ban_cb.set(getattr(self.parent, 'selected_ban', 'Teemo'))
-        self.ban_cb.grid(row=1, column=2, sticky="ew", padx=(5, 0)) # "ew" pour étirer horizontalement
-        self.ban_cb.bind("<<ComboboxSelected>>", self._validate_champ_selection)
-        self.ban_cb.bind("<KeyRelease>", self._on_champ_search)
-        self.ban_cb.bind("<FocusOut>", self._validate_champ_selection)
-        # Bind clic gauche pour ouvrir direct si besoin
-        self.ban_cb.bind("<Button-1>", lambda e: self.ban_cb.tk.call('ttk::combobox::PopdownWindow', str(self.ban_cb)))
-
-        # --- Auto-Pick ---
+        # CORRECTION 2 : Auto-Pick déplacé ICI (Avant le Ban)
+        
+        # --- ROW 1 : Checkbox Auto-Pick ---
         ttk.Checkbutton(
             frame, text="Auto-Pick (Priorité)", variable=self.pick_var,
             command=lambda: (setattr(self.parent, 'auto_pick_enabled', self.pick_var.get()), self.toggle_pick()),
             bootstyle="info-round-toggle"
-        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(15, 5))
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
+        # --- ROW 2, 3, 4 : Les 3 Picks ---
         # Pick 1
-        self.lbl_img_p1 = ttk.Label(frame)
-        self.lbl_img_p1.grid(row=3, column=0, padx=(0, 5), pady=3, sticky="e")
-        ttk.Label(frame, text="Pick 1 :").grid(row=3, column=1, sticky="w", padx=5, pady=3)
-        self.pick_cb_1 = ttk.Combobox(frame, values=self.champions, state="normal")
-        self.pick_cb_1.set(getattr(self.parent, 'selected_pick_1', 'Garen'))
-        self.pick_cb_1.grid(row=3, column=2, sticky="ew", padx=(5, 0))
-        self.pick_cb_1.bind("<<ComboboxSelected>>", self._validate_champ_selection)
-        self.pick_cb_1.bind("<KeyRelease>", self._on_champ_search)
-        self.pick_cb_1.bind("<FocusOut>", self._validate_champ_selection)
-        self.pick_cb_1.bind("<Button-1>", lambda e: self.pick_cb_1.tk.call('ttk::combobox::PopdownWindow', str(self.pick_cb_1)))
+        ttk.Label(frame, text="Pick 1 :").grid(row=2, column=0, sticky="e", padx=5, pady=3)
+        self.btn_pick_1 = ttk.Button(frame, text=self.parent.selected_pick_1, bootstyle="secondary-outline")
+        self.btn_pick_1.grid(row=2, column=1, sticky="ew", padx=5, pady=3)
+        self.btn_pick_1.configure(command=lambda: self._open_champion_picker("pick", 1))
 
         # Pick 2
-        self.lbl_img_p2 = ttk.Label(frame)
-        self.lbl_img_p2.grid(row=4, column=0, padx=(0, 5), pady=3, sticky="e")
-        ttk.Label(frame, text="Pick 2 :").grid(row=4, column=1, sticky="w", padx=5, pady=3)
-        self.pick_cb_2 = ttk.Combobox(frame, values=self.champions, state="normal")
-        self.pick_cb_2.set(getattr(self.parent, 'selected_pick_2', 'Lux'))
-        self.pick_cb_2.grid(row=4, column=2, sticky="ew", padx=(5, 0))
-        self.pick_cb_2.bind("<<ComboboxSelected>>", self._validate_champ_selection)
-        self.pick_cb_2.bind("<KeyRelease>", self._on_champ_search)
-        self.pick_cb_2.bind("<FocusOut>", self._validate_champ_selection)
-        self.pick_cb_2.bind("<Button-1>", lambda e: self.pick_cb_2.tk.call('ttk::combobox::PopdownWindow', str(self.pick_cb_2)))
+        ttk.Label(frame, text="Pick 2 :").grid(row=3, column=0, sticky="e", padx=5, pady=3)
+        self.btn_pick_2 = ttk.Button(frame, text=self.parent.selected_pick_2, bootstyle="secondary-outline")
+        self.btn_pick_2.grid(row=3, column=1, sticky="ew", padx=5, pady=3)
+        self.btn_pick_2.configure(command=lambda: self._open_champion_picker("pick", 2))
 
         # Pick 3
-        self.lbl_img_p3 = ttk.Label(frame)
-        self.lbl_img_p3.grid(row=5, column=0, padx=(0, 5), pady=3, sticky="e")
-        ttk.Label(frame, text="Pick 3 :").grid(row=5, column=1, sticky="w", padx=5, pady=3)
-        self.pick_cb_3 = ttk.Combobox(frame, values=self.champions, state="normal")
-        self.pick_cb_3.set(getattr(self.parent, 'selected_pick_3', 'Ashe'))
-        self.pick_cb_3.grid(row=5, column=2, sticky="ew", padx=(5, 0))
-        self.pick_cb_3.bind("<<ComboboxSelected>>", self._validate_champ_selection)
-        self.pick_cb_3.bind("<KeyRelease>", self._on_champ_search)
-        self.pick_cb_3.bind("<FocusOut>", self._validate_champ_selection)
-        self.pick_cb_3.bind("<Button-1>", lambda e: self.pick_cb_3.tk.call('ttk::combobox::PopdownWindow', str(self.pick_cb_3)))
+        ttk.Label(frame, text="Pick 3 :").grid(row=4, column=0, sticky="e", padx=5, pady=3)
+        self.btn_pick_3 = ttk.Button(frame, text=self.parent.selected_pick_3, bootstyle="secondary-outline")
+        self.btn_pick_3.grid(row=4, column=1, sticky="ew", padx=5, pady=3)
+        self.btn_pick_3.configure(command=lambda: self._open_champion_picker("pick", 3))
 
-        # --- Auto Summoners ---
+        # CORRECTION 2 (Suite) : Auto-Ban déplacé APRÈS les picks
+
+        # --- ROW 5 : Checkbox Auto-Ban ---
+        ttk.Checkbutton(
+            frame, text="Auto-Ban", variable=self.ban_var,
+            command=lambda: (setattr(self.parent, 'auto_ban_enabled', self.ban_var.get()), self.toggle_ban()),
+            bootstyle="danger-round-toggle"
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(15, 5))
+
+        # --- ROW 6 : Bouton Ban ---
+        ttk.Label(frame, text="Bannir :").grid(row=6, column=0, sticky="e", padx=5)
+        self.btn_ban = ttk.Button(frame, text=self.parent.selected_ban, bootstyle="secondary-outline")
+        self.btn_ban.grid(row=6, column=1, sticky="ew", padx=5)
+        self.btn_ban.configure(command=lambda: self._open_champion_picker("ban"))
+
+        # --- ROW 7 : Checkbox Summoners ---
         ttk.Checkbutton(
             frame, text="Auto Summoners", variable=self.summ_var,
             command=lambda: (setattr(self.parent, 'auto_summoners_enabled', self.summ_var.get()), self.toggle_spells()),
             bootstyle="warning-round-toggle"
-        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(15, 5))
+        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
+        # --- ROW 8, 9 : Sorts ---
         # Sort 1
-        ttk.Label(frame, text="Sort 1 :").grid(row=7, column=1, sticky="w", padx=5, pady=3)
+        ttk.Label(frame, text="Sort 1 :").grid(row=8, column=0, sticky="e", padx=5, pady=3)
         self.btn_spell_1 = ttk.Button(frame, text=self.parent.global_spell_1, bootstyle="secondary-outline")
-        self.btn_spell_1.grid(row=7, column=2, sticky="ew", padx=(5, 0), pady=3)
+        self.btn_spell_1.grid(row=8, column=1, sticky="ew", padx=5, pady=3)
         self.btn_spell_1.configure(command=lambda: self._open_spell_picker(1))
 
         # Sort 2
-        ttk.Label(frame, text="Sort 2 :").grid(row=8, column=1, sticky="w", padx=5, pady=3)
+        ttk.Label(frame, text="Sort 2 :").grid(row=9, column=0, sticky="e", padx=5, pady=3)
         self.btn_spell_2 = ttk.Button(frame, text=self.parent.global_spell_2, bootstyle="secondary-outline")
-        self.btn_spell_2.grid(row=8, column=2, sticky="ew", padx=(5, 0), pady=3)
+        self.btn_spell_2.grid(row=9, column=1, sticky="ew", padx=5, pady=3)
         self.btn_spell_2.configure(command=lambda: self._open_spell_picker(2))
 
-        # --- Auto Runes ---
+        # --- ROW 10 : Auto Runes ---
         ttk.Checkbutton(
             frame, text="Auto Runes (via LCU)", variable=self.meta_runes_var,
             command=lambda: setattr(self.parent, 'auto_meta_runes_enabled', self.meta_runes_var.get()),
             bootstyle="primary-round-toggle"
-        ).grid(row=9, column=0, columnspan=3, sticky="w", pady=(15, 5))
+        ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        # --- Pseudo & Region ---
+        # --- ROW 11 : Checkbox Pseudo ---
         ttk.Checkbutton(
             frame, text="Détection auto (Pseudo & Région)", variable=self.summ_auto_var,
             command=self.toggle_summoner_entry, bootstyle="secondary-round-toggle"
-        ).grid(row=11, column=0, columnspan=3, sticky="w", pady=(15, 5))
+        ).grid(row=11, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=12, column=0, columnspan=2, sticky="w", pady=5)
+        # --- ROW 12 : Input Pseudo ---
+        ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=12, column=0, sticky="e", padx=5, pady=5)
         self.summ_entry = ttk.Entry(frame, textvariable=self.summ_entry_var, state="readonly")
-        self.summ_entry.grid(row=12, column=2, sticky="ew", padx=(5, 0))
+        self.summ_entry.grid(row=12, column=1, sticky="ew", padx=5)
 
-        ttk.Label(frame, text="Région :", anchor="w").grid(row=13, column=0, columnspan=2, sticky="w", pady=5)
+        # --- ROW 13 : Input Région ---
+        ttk.Label(frame, text="Région :", anchor="w").grid(row=13, column=0, sticky="e", padx=5, pady=5)
         self.region_var = tk.StringVar(value=self.parent.region)
         self.region_cb = ttk.Combobox(frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
-        self.region_cb.grid(row=13, column=2, sticky="ew", padx=(5, 0))
+        self.region_cb.grid(row=13, column=1, sticky="ew", padx=5)
         self.region_cb.bind("<<ComboboxSelected>>", lambda e: setattr(self.parent, 'region', self.region_var.get()))
 
-        # --- Divers ---
-        ttk.Separator(frame).grid(row=14, column=0, columnspan=3, sticky="we", pady=(15, 10))
-        ttk.Checkbutton(
-            frame, text="\"Retour au salon\" automatique", variable=self.play_again_var,
-            command=lambda: setattr(self.parent, 'auto_play_again_enabled', self.play_again_var.get()),
-            bootstyle="info-round-toggle"
-        ).grid(row=15, column=0, columnspan=3, sticky="w", pady=2)
+        # --- ROW 14 : Séparateur ---
+        ttk.Separator(frame).grid(row=14, column=0, columnspan=2, sticky="we", pady=(15, 10))
+        
+        # --- ROW 15 : Options Diverses (Frame interne) ---
+        misc_frame = ttk.Frame(frame)
+        misc_frame.grid(row=15, column=0, columnspan=2, sticky="w")
+        
+        ttk.Checkbutton(misc_frame, text="\"Retour au salon\" automatique", variable=self.play_again_var,
+                        command=lambda: setattr(self.parent, 'auto_play_again_enabled', self.play_again_var.get()),
+                        bootstyle="info-round-toggle").pack(anchor="w", pady=2)
+        
+        ttk.Checkbutton(misc_frame, text="Cacher l'application quand LoL est détecté", variable=self.auto_hide_var,
+                        command=lambda: setattr(self.parent, 'auto_hide_on_connect', self.auto_hide_var.get()),
+                        bootstyle="secondary-round-toggle").pack(anchor="w", pady=2)
+        
+        ttk.Checkbutton(misc_frame, text="Fermer l'application quand LoL se ferme", variable=self.close_on_exit_var,
+                        command=lambda: setattr(self.parent, 'close_app_on_lol_exit', self.close_on_exit_var.get()),
+                        bootstyle="danger-round-toggle").pack(anchor="w", pady=2)
 
-        ttk.Checkbutton(
-            frame, text="Cacher l'application quand LoL est détecté", variable=self.auto_hide_var,
-            command=lambda: setattr(self.parent, 'auto_hide_on_connect', self.auto_hide_var.get()),
-            bootstyle="secondary-round-toggle"
-        ).grid(row=16, column=0, columnspan=3, sticky="w", pady=2)
-
-        ttk.Checkbutton(
-            frame, text="Fermer l'application quand LoL se ferme", variable=self.close_on_exit_var,
-            command=lambda: setattr(self.parent, 'close_app_on_lol_exit', self.close_on_exit_var.get()),
-            bootstyle="danger-round-toggle"
-        ).grid(row=17, column=0, columnspan=3, sticky="w", pady=2)
-
-        ttk.Button(self.window, text="Fermer", command=self.on_close, bootstyle="primary").pack(pady=(0, 15))
+        # --- Bouton Fermer ---
+        # On utilise pack ici car c'est en dehors de la grille principale
+        ttk.Button(self.window, text="Fermer", command=self.on_close, bootstyle="primary").pack(pady=(0, 20), side="bottom")
 
         self.toggle_pick()
         self.toggle_ban()
         self.toggle_spells()
         self.toggle_summoner_entry()
         
-        # Initialisation des images
-        self._update_pick_image(self.pick_cb_1.get(), self.lbl_img_p1)
-        self._update_pick_image(self.pick_cb_2.get(), self.lbl_img_p2)
-        self._update_pick_image(self.pick_cb_3.get(), self.lbl_img_p3)
-        self._update_pick_image(self.ban_cb.get(), self.lbl_img_ban)
-        self._update_spell_btn_display(self.btn_spell_1, self.parent.global_spell_1)
-        self._update_spell_btn_display(self.btn_spell_2, self.parent.global_spell_2)
+        # Initialisation des boutons
+        self._update_btn_content(self.btn_ban, self.parent.selected_ban, is_champ=True)
+        self._update_btn_content(self.btn_pick_1, self.parent.selected_pick_1, is_champ=True)
+        self._update_btn_content(self.btn_pick_2, self.parent.selected_pick_2, is_champ=True)
+        self._update_btn_content(self.btn_pick_3, self.parent.selected_pick_3, is_champ=True)
+        self._update_btn_content(self.btn_spell_1, self.parent.global_spell_1, is_champ=False)
+        self._update_btn_content(self.btn_spell_2, self.parent.global_spell_2, is_champ=False)
 
-    def _on_champ_search(self, event):
-        """Gère la recherche ET l'exclusion du perso banni dans les picks."""
-        widget = event.widget
-        if event.keysym in ['Return', 'Tab', 'Up', 'Down']: return
-        
-        current_text = widget.get().lower()
-        
-        # CORRECTION 4 : Exclusion du perso banni dans les listes de Pick
-        banned_champ = self.ban_cb.get()
-        
-        # On filtre : commence par le texte ET n'est pas le perso banni (si on est sur un pick)
-        filtered_list = []
-        for c in self.all_champions:
-            # Si le widget est un Pick, on vérifie qu'il n'est pas banni
-            is_banned = (widget != self.ban_cb and c == banned_champ)
-            
-            if c.lower().startswith(current_text) and not is_banned:
-                filtered_list.append(c)
-
-        widget['values'] = filtered_list
-
-        # CORRECTION 3 : Force l'ouverture de la liste déroulante
-        try:
-            if filtered_list:
-                widget.tk.call('ttk::combobox::PopdownWindow', str(widget))
-            else:
-                # Si vide, on peut fermer ou laisser vide
-                pass
-        except tk.TclError:
-            pass
-
-    # ... (Le reste des méthodes : toggle_summoner_entry, toggle_pick, etc. restent identiques au code précédent)
-    # Copie-colle ici les autres méthodes : toggle_*, _validate_champ_selection, _update_pick_image, etc.
-    # Elles n'ont pas besoin de changement majeur sauf si tu veux revoir _validate_champ_selection pour la propreté.
+    # ──────────────────────────────────────────────────────────────────────────
+    # LE CHAMPION PICKER (GRID + SEARCH)
+    # ──────────────────────────────────────────────────────────────────────────
     
+    def _open_champion_picker(self, context="pick", slot_num=1):
+        picker = ttk.Toplevel(self.window)
+        picker.title(f"Sélectionner Champion ({context.title()})")
+        picker.geometry("480x600")
+        x = self.window.winfo_x() + 20
+        y = self.window.winfo_y() + 20
+        picker.geometry(f"+{x}+{y}")
+
+        search_frame = ttk.Frame(picker, padding=10)
+        search_frame.pack(fill="x")
+        ttk.Label(search_frame, text="Rechercher :").pack(side="left")
+        
+        search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_frame, textvariable=search_var)
+        search_entry.pack(side="left", fill="x", expand=True, padx=5)
+        search_entry.focus_set()
+
+        from ttkbootstrap.scrolled import ScrolledFrame
+        scroll_container = ScrolledFrame(picker, autohide=False)
+        scroll_container.pack(fill="both", expand=True, padx=5, pady=5)
+        grid_frame = scroll_container
+
+        excluded = set()
+        if context == "pick":
+            p1 = self.parent.selected_pick_1
+            p2 = self.parent.selected_pick_2
+            p3 = self.parent.selected_pick_3
+            banned = self.parent.selected_ban
+            
+            if banned: excluded.add(banned)
+            if slot_num == 1:
+                if p2: excluded.add(p2)
+                if p3: excluded.add(p3)
+            elif slot_num == 2:
+                if p1: excluded.add(p1)
+                if p3: excluded.add(p3)
+            elif slot_num == 3:
+                if p1: excluded.add(p1)
+                if p2: excluded.add(p2)
+        
+        valid_champs = [c for c in self.all_champions if c not in excluded]
+
+        def populate_grid(filter_text=""):
+            for widget in grid_frame.winfo_children():
+                widget.destroy()
+
+            filter_text = filter_text.lower()
+            row, col = 0, 0
+            max_cols = 4 
+
+            for champ_name in valid_champs:
+                if filter_text in champ_name.lower():
+                    btn = ttk.Button(
+                        grid_frame, 
+                        text=champ_name, 
+                        bootstyle="link", 
+                        compound="top",
+                        command=lambda c=champ_name: on_select(c)
+                    )
+                    btn.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+                    self._load_img_into_btn(btn, champ_name, is_champ=True)
+
+                    col += 1
+                    if col >= max_cols:
+                        col = 0
+                        row += 1
+
+        def on_select(champ_name):
+            if context == "ban":
+                self.parent.selected_ban = champ_name
+                self._update_btn_content(self.btn_ban, champ_name, is_champ=True)
+            elif context == "pick":
+                if slot_num == 1:
+                    self.parent.selected_pick_1 = champ_name
+                    self._update_btn_content(self.btn_pick_1, champ_name, is_champ=True)
+                elif slot_num == 2:
+                    self.parent.selected_pick_2 = champ_name
+                    self._update_btn_content(self.btn_pick_2, champ_name, is_champ=True)
+                elif slot_num == 3:
+                    self.parent.selected_pick_3 = champ_name
+                    self._update_btn_content(self.btn_pick_3, champ_name, is_champ=True)
+            picker.destroy()
+
+        search_var.trace("w", lambda *args: populate_grid(search_var.get()))
+        
+        def on_enter(event):
+            children = grid_frame.winfo_children()
+            if children and isinstance(children[0], ttk.Button):
+                children[0].invoke()
+        
+        search_entry.bind("<Return>", on_enter)
+        populate_grid()
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # LE SPELL PICKER (GRID)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _open_spell_picker(self, spell_slot_num):
+        if not self.summ_var.get(): return
+        picker = ttk.Toplevel(self.window)
+        picker.title(f"Choisir Sort {spell_slot_num}")
+        picker.geometry(f"350x350+{self.window.winfo_x()+50}+{self.window.winfo_y()+100}")
+        picker.resizable(False, False)
+        
+        container = ttk.Frame(picker, padding=10)
+        container.pack(fill="both", expand=True)
+
+        def on_pick(spell_name):
+            other_spell = self.parent.global_spell_2 if spell_slot_num == 1 else self.parent.global_spell_1
+            if spell_name == other_spell and spell_name != "(Aucun)":
+                if spell_slot_num == 1:
+                    self.parent.global_spell_2 = "(Aucun)"
+                    self._update_btn_content(self.btn_spell_2, "(Aucun)", is_champ=False)
+                else:
+                    self.parent.global_spell_1 = "(Aucun)"
+                    self._update_btn_content(self.btn_spell_1, "(Aucun)", is_champ=False)
+
+            if spell_slot_num == 1:
+                self.parent.global_spell_1 = spell_name
+                self._update_btn_content(self.btn_spell_1, spell_name, is_champ=False)
+            else:
+                self.parent.global_spell_2 = spell_name
+                self._update_btn_content(self.btn_spell_2, spell_name, is_champ=False)
+            picker.destroy()
+
+        row, col = 0, 0
+        for spell in self.spell_list:
+            f = ttk.Frame(container)
+            f.grid(row=row, column=col, padx=5, pady=5)
+            btn = ttk.Button(f, bootstyle="link", command=lambda s=spell: on_pick(s))
+            btn.pack()
+            self._load_img_into_btn(btn, spell, is_champ=False)
+            try:
+                from ttkbootstrap.tooltip import ToolTip
+                ToolTip(btn, text=spell)
+            except: pass
+            col += 1
+            if col > 3: 
+                col = 0
+                row += 1
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # UTILITAIRES UI
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _update_btn_content(self, btn_widget, name, is_champ=True):
+        if not name: name = "..."
+        def task():
+            if is_champ: img_pil = self.parent.dd.get_champion_icon(name)
+            else: img_pil = self.parent.dd.get_summoner_icon(name)
+            
+            if img_pil:
+                img_pil = img_pil.resize((30, 30), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img_pil)
+                def ui():
+                    if btn_widget.winfo_exists():
+                        btn_widget.configure(image=photo, text=f"  {name}", compound="left")
+                        btn_widget.image = photo
+                btn_widget.after(0, ui)
+            else:
+                def ui_clear():
+                    if btn_widget.winfo_exists():
+                        btn_widget.configure(image='', text=f"  {name}", compound="left")
+                btn_widget.after(0, ui_clear)
+        Thread(target=task, daemon=True).start()
+
+    def _load_img_into_btn(self, btn_widget, name, is_champ=True):
+        def task():
+            if is_champ: img_pil = self.parent.dd.get_champion_icon(name)
+            else: img_pil = self.parent.dd.get_summoner_icon(name)
+            
+            if img_pil:
+                size = (40, 40) if is_champ else (48, 48)
+                img_pil = img_pil.resize(size, Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img_pil)
+                def ui():
+                    if btn_widget.winfo_exists():
+                        btn_widget.configure(image=photo)
+                        btn_widget.image = photo
+                btn_widget.after(0, ui)
+        Thread(target=task, daemon=True).start()
+
     def toggle_summoner_entry(self):
         if self.summ_auto_var.get():
             self.summ_entry.configure(state="readonly")
@@ -564,12 +696,12 @@ class SettingsWindow:
 
     def toggle_pick(self):
         state = "normal" if self.pick_var.get() else "disabled"
-        self.pick_cb_1.configure(state=state)
-        self.pick_cb_2.configure(state=state)
-        self.pick_cb_3.configure(state=state)
+        self.btn_pick_1.configure(state=state)
+        self.btn_pick_2.configure(state=state)
+        self.btn_pick_3.configure(state=state)
 
     def toggle_ban(self):
-        self.ban_cb.configure(state="normal" if self.ban_var.get() else "disabled")
+        self.btn_ban.configure(state="normal" if self.ban_var.get() else "disabled")
 
     def toggle_spells(self):
         state = "normal" if self.summ_var.get() else "disabled"
@@ -588,165 +720,7 @@ class SettingsWindow:
                 setattr(self.parent, 'region', auto_region)
         self.window.after(1000, self._poll_summoner_label)
 
-    def _validate_champ_selection(self, event):
-        widget = event.widget
-        current_text = widget.get()
-        event_type = event.type if hasattr(event, 'type') else ''
-
-        if str(event_type) == 'FocusOut' or event_type == '9':
-            # On remet la liste complète (moins le ban si c'est un pick)
-            banned = self.ban_cb.get()
-            full_list = [c for c in self.all_champions if not (widget != self.ban_cb and c == banned)]
-            widget['values'] = full_list
-
-            if current_text not in self.all_champions:
-                if widget == self.pick_cb_1: widget.set(self.parent.selected_pick_1)
-                elif widget == self.pick_cb_2: widget.set(self.parent.selected_pick_2)
-                elif widget == self.pick_cb_3: widget.set(self.parent.selected_pick_3)
-                elif widget == self.ban_cb: 
-                    widget.set(self.parent.selected_ban)
-                    self._update_pick_image(self.parent.selected_ban, self.lbl_img_ban)
-                current_text = widget.get()
-
-        if widget in [self.pick_cb_1, self.pick_cb_2, self.pick_cb_3]:
-            p1, p2, p3 = self.pick_cb_1.get(), self.pick_cb_2.get(), self.pick_cb_3.get()
-            if widget == self.pick_cb_1:
-                if current_text == p2 and p2: self.pick_cb_2.set("")
-                if current_text == p3 and p3: self.pick_cb_3.set("")
-            elif widget == self.pick_cb_2:
-                if current_text == p1 and p1: self.pick_cb_1.set("")
-                if current_text == p3 and p3: self.pick_cb_3.set("")
-            elif widget == self.pick_cb_3:
-                if current_text == p1 and p1: self.pick_cb_1.set("")
-                if current_text == p2 and p2: self.pick_cb_2.set("")
-
-            self.parent.selected_pick_1 = self.pick_cb_1.get()
-            self.parent.selected_pick_2 = self.pick_cb_2.get()
-            self.parent.selected_pick_3 = self.pick_cb_3.get()
-            
-            self._update_pick_image(self.pick_cb_1.get(), self.lbl_img_p1)
-            self._update_pick_image(self.pick_cb_2.get(), self.lbl_img_p2)
-            self._update_pick_image(self.pick_cb_3.get(), self.lbl_img_p3)
-            
-        elif widget == self.ban_cb:
-            self.parent.selected_ban = current_text
-            self._update_pick_image(current_text, self.lbl_img_ban)
-            
-            # Si on a banni un perso qui était sélectionné en pick, on clear le pick
-            if self.pick_cb_1.get() == current_text: self.pick_cb_1.set(""); self._update_pick_image("", self.lbl_img_p1)
-            if self.pick_cb_2.get() == current_text: self.pick_cb_2.set(""); self._update_pick_image("", self.lbl_img_p2)
-            if self.pick_cb_3.get() == current_text: self.pick_cb_3.set(""); self._update_pick_image("", self.lbl_img_p3)
-
-    def _update_pick_image(self, champ_name, label_widget):
-        if not champ_name:
-            label_widget.configure(image='')
-            label_widget.image = None
-            return
-        def task():
-            img_pil = self.parent.dd.get_champion_icon(champ_name)
-            if img_pil:
-                img_pil = img_pil.resize((30, 30), Image.LANCZOS)
-                photo = ImageTk.PhotoImage(img_pil)
-                def ui():
-                    if label_widget.winfo_exists():
-                        label_widget.configure(image=photo)
-                        label_widget.image = photo
-                label_widget.after(0, ui)
-        Thread(target=task, daemon=True).start()
-
-    def _open_spell_picker(self, spell_slot_num):
-        if not self.summ_var.get(): return
-        picker = ttk.Toplevel(self.window)
-        picker.title(f"Choisir Sort {spell_slot_num}")
-        picker.geometry(f"320x300+{self.window.winfo_x() + 50}+{self.window.winfo_y() + 100}")
-        picker.resizable(False, False)
-        container = ttk.Frame(picker, padding=10)
-        container.pack(fill="both", expand=True)
-
-        def on_pick(spell_name):
-            other_spell = self.parent.global_spell_2 if spell_slot_num == 1 else self.parent.global_spell_1
-            if spell_name == other_spell and spell_name != "(Aucun)":
-                if spell_slot_num == 1:
-                    self.parent.global_spell_2 = "(Aucun)"
-                    self._update_spell_btn_display(self.btn_spell_2, "(Aucun)")
-                else:
-                    self.parent.global_spell_1 = "(Aucun)"
-                    self._update_spell_btn_display(self.btn_spell_1, "(Aucun)")
-
-            if spell_slot_num == 1:
-                self.parent.global_spell_1 = spell_name
-                self._update_spell_btn_display(self.btn_spell_1, spell_name)
-            else:
-                self.parent.global_spell_2 = spell_name
-                self._update_spell_btn_display(self.btn_spell_2, spell_name)
-            picker.destroy()
-
-        row, col = 0, 0
-        for spell in self.spell_list:
-            f = ttk.Frame(container)
-            f.grid(row=row, column=col, padx=5, pady=5)
-            btn = ttk.Button(f, bootstyle="link")
-            btn.pack()
-            self._load_img_into_btn(btn, spell, lambda s=spell: on_pick(s))
-            try:
-                from ttkbootstrap.tooltip import ToolTip
-                ToolTip(btn, text=spell)
-            except: pass
-            col += 1
-            if col > 3: 
-                col = 0
-                row += 1
-
-    def _update_spell_btn_display(self, btn_widget, spell_name):
-        btn_widget.configure(text=spell_name)
-        def task():
-            img_pil = self.parent.dd.get_summoner_icon(spell_name)
-            if img_pil:
-                img_pil = img_pil.resize((30, 30), Image.LANCZOS)
-                photo = ImageTk.PhotoImage(img_pil)
-                def ui():
-                    if btn_widget.winfo_exists():
-                        btn_widget.configure(image=photo, text=f"  {spell_name}", compound="left") 
-                        btn_widget.image = photo
-                btn_widget.after(0, ui)
-            else:
-                def ui_clear():
-                    if btn_widget.winfo_exists():
-                        btn_widget.configure(image='', text=spell_name)
-                btn_widget.after(0, ui_clear)
-        Thread(target=task, daemon=True).start()
-
-    def _load_img_into_btn(self, btn_widget, spell_name, callback):
-        btn_widget.configure(command=callback)
-        def task():
-            img_pil = self.parent.dd.get_summoner_icon(spell_name)
-            if img_pil:
-                img_pil = img_pil.resize((48, 48), Image.LANCZOS)
-                photo = ImageTk.PhotoImage(img_pil)
-                def ui():
-                    if btn_widget.winfo_exists():
-                        btn_widget.configure(image=photo)
-                        btn_widget.image = photo
-                btn_widget.after(0, ui)
-            else:
-                def ui_txt():
-                    if btn_widget.winfo_exists():
-                        btn_widget.configure(text=spell_name)
-                btn_widget.after(0, ui_txt)
-        Thread(target=task, daemon=True).start()
-
     def on_close(self):
-        # Validation forcée
-        self._validate_champ_selection(type('Event', (object,), {'widget': self.pick_cb_1, 'type': 'FocusOut'})())
-        self._validate_champ_selection(type('Event', (object,), {'widget': self.pick_cb_2, 'type': 'FocusOut'})())
-        self._validate_champ_selection(type('Event', (object,), {'widget': self.pick_cb_3, 'type': 'FocusOut'})())
-        self._validate_champ_selection(type('Event', (object,), {'widget': self.ban_cb, 'type': 'FocusOut'})())
-
-        self.parent.selected_pick_1 = self.pick_cb_1.get()
-        self.parent.selected_pick_2 = self.pick_cb_2.get()
-        self.parent.selected_pick_3 = self.pick_cb_3.get()
-        self.parent.selected_ban = self.ban_cb.get()
-
         self.parent.auto_summoners_enabled = self.summ_var.get()
         self.parent.summoner_name_auto_detect = self.summ_auto_var.get()
         if not self.summ_auto_var.get():
@@ -759,11 +733,10 @@ class SettingsWindow:
 
         self.parent.save_parameters()
         self.window.destroy()
-        
+
 # ───────────────────────────────────────────────────────────────────────────
 # APPLICATION PRINCIPALE
 # ───────────────────────────────────────────────────────────────────────────
-
 class LoLAssistant:
     SUMMONER_SPELL_MAP = SUMMONER_SPELL_MAP
 
@@ -1134,8 +1107,6 @@ class LoLAssistant:
     def _notify_game_start_once(self):
         now = time()
         if now - self.last_game_start_notify_ts >= self.game_start_cooldown:
-            try: pygame.mixer.Sound(resource_path("config/son.wav")).play()
-            except Exception: pass
             self.show_toast("🎯 Game Start !")
             self.update_status("🎯 Game Start détecté")
             self.last_game_start_notify_ts = now
@@ -1420,16 +1391,26 @@ class LoLAssistant:
                 }.get(phase, "ℹ️")
                 self.update_status(f"{emoji} Phase : {phase}")
 
+                # 1. Si on revient au Menu ou en Recherche (quelqu'un a refusé ou game finie)
+                # On réinitialise le flag pour que le son puisse sonner à la prochaine trouvaille
+                if phase in ("Lobby", "Matchmaking", "None"):
+                    self.has_played_accept_sound = False
+                    self.has_played_gamestart_sound = False # On reset aussi le start au cas où
+
+                # 2. Si on arrive en Champ Select (Partie validée)
                 if phase == "ChampSelect":
                     self._reset_between_games()
                     await self._champ_select_tick()
 
+                # 3. Début de partie (Juste la notif visuelle, pas de son comme demandé avant)
                 if phase in ("GameStart", "InProgress"):
                     self._notify_game_start_once()
 
-                if phase in ("EndOfGame", "PreEndOfGame", "None"):
+                # 4. Fin de partie
+                if phase in ("EndOfGame", "PreEndOfGame"):
                     self._reset_between_games()
 
+                # 5. Rejouer auto
                 if phase in ("EndOfGame", "WaitingForStats"):
                     await self._handle_post_game()
 
