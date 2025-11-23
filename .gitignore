@@ -1,6 +1,10 @@
 # Ignore le dossier "OTP LOL" et tout son contenu
 OTP LOL/
 
-# Fichiers exécutables spécifiques à ignorer
-OTP LOL.exe
+# Fichiers exécutables
 *.exe
+OTP LOL.exe
+
+# Python caches
+__pycache__/
+*.pyc
