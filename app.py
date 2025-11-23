@@ -2,11 +2,11 @@
 MAIN LOL - Assistant pour League of Legends
 ------------------------------------------
 Auteur: Qurnt1
-Version: 5.0 (Fix UI Images & Crashs)
+Version: 6.0
 """
 
 # ───────────────────────────────────────────────────────────────────────────
-# IMPORTS
+# IMPORTS & CONFIGURATION SYSTEME
 # ───────────────────────────────────────────────────────────────────────────
 
 import tkinter as tk
@@ -32,6 +32,49 @@ import unicodedata
 from typing import Optional, Dict, Any, List, Tuple
 from lcu_driver import Connector
 import asyncio
+import logging  # <--- AJOUT IMPORTANT
+
+# --- 1. CONFIGURATION DU LOGGING (Remplace les prints) ---
+# Cela va créer un fichier 'app_debug.log' à côté de ton script/exe
+logging.basicConfig(
+    filename='app_debug.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
+    encoding='utf-8'
+)
+
+# --- 2. GESTION DU HIGH DPI (Pour écrans 4K / Zoom Windows) ---
+try:
+    from ctypes import windll
+    windll.shcore.SetProcessDpiAwareness(1)
+    logging.info("DPI Awareness activé.")
+except Exception as e:
+    logging.warning(f"Impossible d'activer le DPI Awareness : {e}")
+
+# ───────────────────────────────────────────────────────────────────────────
+# CONSTANTES (Magic Strings)
+# ───────────────────────────────────────────────────────────────────────────
+
+# URLs DataDragon
+URL_DD_VERSIONS = "https://ddragon.leagueoflegends.com/api/versions.json"
+URL_DD_CHAMPIONS = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
+URL_DD_SUMMONERS = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/summoner.json"
+URL_DD_IMG_CHAMP = "https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{filename}"
+URL_DD_IMG_SPELL = "https://ddragon.leagueoflegends.com/cdn/{version}/img/spell/{filename}"
+
+# Endpoints LCU (API Locale & WebSocket)
+EP_SESSION = "/lol-champ-select/v1/session"
+EP_SESSION_TIMER = "/lol-champ-select/v1/session/timer"  # <--- AJOUTÉ
+EP_SESSION_LEGACY = "/lol-champ-select-legacy/v1/session"
+EP_ACTIONS = "/lol-champ-select/v1/session/actions/{actionId}"
+EP_ACTIONS_LEGACY = "/lol-champ-select-legacy/v1/session/actions/{actionId}"
+EP_GAMEFLOW = "/lol-gameflow/v1/gameflow-phase"
+EP_READY_CHECK = "/lol-matchmaking/v1/ready-check"
+EP_PICKABLE = "/lol-champ-select/v1/pickable-champion-ids"
+EP_MY_SELECTION = "/lol-champ-select/v1/session/my-selection"
+EP_CURRENT_SUMMONER = "/lol-summoner/v1/current-summoner"
+EP_CHAT_ME = "/lol-chat/v1/me"
+EP_LOGIN = "/lol-login/v1/session"
 
 # ───────────────────────────────────────────────────────────────────────────
 # UTILITAIRES GENERAUX
@@ -105,17 +148,23 @@ def check_single_instance():
             if pid != os.getpid() and psutil.pid_exists(pid):
                 print("L'application est déjà en cours d'exécution.")
                 sys.exit(0)
-        except Exception:
-            pass
-    with open(LOCKFILE_PATH, 'w') as f:
-        f.write(str(os.getpid()))
+        except Exception as e:
+            # On affiche l'erreur si on n'arrive pas à lire le PID
+            print(f"[SYSTEM] Erreur lecture lockfile : {e}")
+            pass # On continue quand même si le fichier est corrompu
+    
+    try:
+        with open(LOCKFILE_PATH, 'w') as f:
+            f.write(str(os.getpid()))
+    except Exception as e:
+        print(f"[SYSTEM] Impossible de créer le lockfile : {e}")
 
 def remove_lockfile():
     try:
         if os.path.exists(LOCKFILE_PATH):
             os.remove(LOCKFILE_PATH)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[SYSTEM] Erreur suppression lockfile : {e}")
 
 check_single_instance()
 
@@ -158,8 +207,8 @@ class DataDragon:
                 self.all_names = sorted(list(self.name_by_id.values()))
                 self.loaded = True
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[DataDragon] Erreur lecture cache : {e}")
         return False
 
     def _save_cache(self):
@@ -171,8 +220,8 @@ class DataDragon:
                     "by_id": self.by_id,
                     "name_by_id": self.name_by_id,
                 }, f)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[DataDragon] Erreur écriture cache : {e}")
 
     def load(self):
         if self.loaded: return
@@ -180,9 +229,12 @@ class DataDragon:
 
         try:
             import requests
-            versions = requests.get(self.VERSIONS_URL, timeout=5).json()
+            # Utilisation de la constante
+            versions = requests.get(URL_DD_VERSIONS, timeout=5).json()
             version = versions[0]
-            data = requests.get(self.CHAMP_LIST_URL_TPL.format(version=version), timeout=7).json()
+            # Utilisation de la constante
+            data = requests.get(URL_DD_CHAMPIONS.format(version=version), timeout=7).json()
+            
             champs = data.get("data", {})
             for champ_slug, info in champs.items():
                 champ_name = info.get("name") or champ_slug
@@ -202,7 +254,10 @@ class DataDragon:
             self.all_names = sorted(list(self.name_by_id.values()))
             self.loaded = True
             self._save_cache()
-        except Exception:
+            logging.info(f"[DataDragon] Chargé avec succès (v{self.version})")
+
+        except Exception as e:
+            logging.error(f"[DataDragon] Mode hors ligne activé suite à erreur : {e}")
             # Mode hors ligne (fallback basique)
             basic = {"garen": 86, "teemo": 17, "ashe": 22, "lux": 99, "ezreal": 81}
             for n, cid in basic.items():
@@ -212,18 +267,6 @@ class DataDragon:
             self.version = "offline"
             self.all_names = sorted(list(self.name_by_id.values()))
             self.loaded = True
-
-    def resolve_champion(self, name_or_id: Any) -> Optional[int]:
-        self.load()
-        if name_or_id is None: return None
-        try: return int(name_or_id)
-        except: pass
-        n = self._normalize(str(name_or_id))
-        return self.by_norm_name.get(n)
-
-    def id_to_name(self, cid: int) -> Optional[str]:
-        self.load()
-        return self.name_by_id.get(cid)
 
     def get_champion_icon(self, name_or_id) -> Optional[Image.Image]:
         cid = self.resolve_champion(name_or_id)
@@ -242,8 +285,58 @@ class DataDragon:
         local_path = os.path.join(cache_dir, image_filename)
 
         if os.path.exists(local_path):
-            try: return Image.open(local_path)
-            except: pass
+            try: 
+                return Image.open(local_path)
+            except Exception as e: 
+                logging.warning(f"[DataDragon] Image corrompue ({local_path}) : {e}")
+
+        # Utilisation de la constante pour l'URL Image
+        url = URL_DD_IMG_CHAMP.format(version=self.version, filename=image_filename)
+        try:
+            import requests
+            from io import BytesIO
+            r = requests.get(url, timeout=5)
+            if r.status_code == 200:
+                img_data = BytesIO(r.content)
+                img = Image.open(img_data)
+                with open(local_path, "wb") as f:
+                    f.write(r.content)
+                return img
+        except Exception as e:
+            logging.error(f"Erreur DL image {image_filename}: {e}")
+        return None
+    
+    def resolve_champion(self, name_or_id: Any) -> Optional[int]:
+        self.load()
+        if name_or_id is None: return None
+        try: return int(name_or_id)
+        except: pass
+        n = self._normalize(str(name_or_id))
+        return self.by_norm_name.get(n)
+
+    def id_to_name(self, cid: int) -> Optional[str]:
+        self.load()
+        return self.name_by_id.get(cid)
+
+
+        
+        champ_data = self.by_id.get(cid)
+        if not champ_data: return None
+            
+        image_filename = champ_data.get("image", {}).get("full")
+        if not image_filename: return None
+
+        cache_dir = os.path.join(tempfile.gettempdir(), "mainlol_icons")
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir, exist_ok=True)
+            
+        local_path = os.path.join(cache_dir, image_filename)
+
+        if os.path.exists(local_path):
+            try: 
+                return Image.open(local_path)
+            except Exception as e: 
+                print(f"[DataDragon] Image corrompue ({local_path}) : {e}")
 
         url = f"https://ddragon.leagueoflegends.com/cdn/{self.version}/img/champion/{image_filename}"
         try:
@@ -347,7 +440,7 @@ class SettingsWindow:
             self.parent.dd.load()
             self.all_champions = self.parent.dd.all_names
         except Exception as e:
-            print(f"Erreur DD load: {e}")
+            print(f"[Settings] Erreur chargement DataDragon : {e}")
             self.all_champions = ["Garen", "Teemo", "Ashe"]
 
         self.spell_list = SUMMONER_SPELL_LIST[:]
@@ -500,6 +593,7 @@ class SettingsWindow:
     
     def _open_champion_picker(self, context="pick", slot_num=1):
         picker = ttk.Toplevel(self.window)
+        picker.iconphoto(False, self.window._icon_img)
         picker.title(f"Sélectionner Champion ({context.title()})")
         picker.geometry("480x600")
         x = self.window.winfo_x() + 20
@@ -598,6 +692,7 @@ class SettingsWindow:
     def _open_spell_picker(self, spell_slot_num):
         if not self.summ_var.get(): return
         picker = ttk.Toplevel(self.window)
+        picker.iconphoto(False, self.window._icon_img)
         picker.title(f"Choisir Sort {spell_slot_num}")
         picker.geometry(f"350x350+{self.window.winfo_x()+50}+{self.window.winfo_y()+100}")
         picker.resizable(False, False)
@@ -633,7 +728,11 @@ class SettingsWindow:
             try:
                 from ttkbootstrap.tooltip import ToolTip
                 ToolTip(btn, text=spell)
-            except: pass
+            except ImportError:
+                # Pas besoin de spammer, on l'affiche une fois ou on ignore silencieusement si on sait que c'est manquant
+                pass 
+            except Exception as e:
+                print(f"[UI] Erreur Tooltip : {e}")
             col += 1
             if col > 3: 
                 col = 0
@@ -810,11 +909,13 @@ class LoLAssistant:
         self.theme_var = tk.StringVar(value=self.theme)
         self.load_config()
 
+        # --- GESTION AUDIO SECURISEE ---
         try:
             pygame.mixer.init()
             self.sound_effect = pygame.mixer.Sound(resource_path("config/son.wav"))
+            logging.info("Audio: Service initialisé.")
         except Exception as e:
-            print(f"Erreur audio: {e}")
+            logging.error(f"Audio: Impossible d'initialiser le son : {e}")
             self.sound_effect = None
 
         self.create_ui()
@@ -888,7 +989,8 @@ class LoLAssistant:
                 json.dump(config, f, indent=4, ensure_ascii=False)
             self.show_toast("Paramètres sauvegardés !")
         except Exception as e:
-            print(f"Erreur lors de la sauvegarde: {e}")
+            print(f"[Config] Erreur CRITIQUE sauvegarde json : {e}")
+            self.show_toast(f"Erreur sauvegarde: {e}")
 
     # ── UI ─────────────────────────────────────────────────────────────────
 
@@ -944,13 +1046,14 @@ class LoLAssistant:
             self.icon = pystray.Icon("MAIN LOL", image, "MAIN LOL", menu)
             Thread(target=self.icon.run, daemon=True).start()
         except Exception as e:
-            print(f"Erreur tray: {e}")
+            print(f"[SystemTray] Échec création icône : {e}")
 
     def setup_hotkeys(self):
         try:
             keyboard.add_hotkey('alt+p', self.open_porofessor)
             keyboard.add_hotkey('alt+c', self.toggle_window)
-        except Exception: pass
+        except Exception as e:
+            print(f"[Hotkeys] Erreur d'enregistrement des raccourcis : {e}")
 
     # ── Helpers URLs ──────────────────────────────────────────────────────
 
@@ -1232,22 +1335,32 @@ class LoLAssistant:
         if action_id in self.completed_actions: return
 
         cname = champion_name or self.dd.id_to_name(champion_id) or str(champion_id)
+        
+        # URL dynamique
         url_v1 = f"/lol-champ-select/v1/session/actions/{action_id}"
         url_legacy = f"/lol-champ-select-legacy/v1/session/actions/{action_id}"
         payload = {"championId": champion_id, "completed": True}
 
-        r = await self.connection.request("patch", url_v1, json=payload)
-        if r.status == 404: r = await self.connection.request("patch", url_legacy, json=payload)
+        logging.info(f"Tentative de {action_kind} sur {cname} (Action ID: {action_id})...")
 
-        if not r or r.status >= 400: return
+        r = await self.connection.request("patch", url_v1, json=payload)
+        if r.status == 404: 
+            r = await self.connection.request("patch", url_legacy, json=payload)
+
+        if not r or r.status >= 400:
+            logging.error(f"Échec {action_kind} sur {cname}. Code: {r.status if r else 'None'}")
+            return
+            
         self.completed_actions.add(action_id)
 
         if action_kind == "BAN":
             self.has_banned = True
             self.update_status(f"🚫 {cname} banni automatiquement")
+            logging.info(f"Succès BAN {cname}")
         elif action_kind == "PICK":
             self.has_picked = True
             self.update_status(f"👑 {cname} sélectionné automatiquement")
+            logging.info(f"Succès PICK {cname}")
             if (self.auto_summoners_enabled or self.auto_meta_runes_enabled) and champion_name:
                 asyncio.create_task(self._set_spells_and_runes(champion_name))
 
@@ -1320,7 +1433,9 @@ class LoLAssistant:
                 await self.connection.request('put', "/lol-perks/v1/currentpage", data=str(final_id))
                 self.update_status(f"✅ Runes appliquées pour {champion_name} !")
         except Exception as e:
-            print(f"[Runes] Erreur : {e}")
+            print(f"[Runes] Erreur application runes : {e}")
+            import traceback
+            traceback.print_exc()
 
     async def _handle_post_game(self):
         if not self.auto_play_again_enabled: return
@@ -1337,7 +1452,7 @@ class LoLAssistant:
     def _ws_loop(self):
         """
         Active un listener WebSocket (lcu_driver est requis).
-        - Réagit instantanément aux phases, ready-check et champ select.
+        Utilise les constantes pour les endpoints.
         """
         if Connector is None: return
         try:
@@ -1347,13 +1462,13 @@ class LoLAssistant:
 
             @connector.ready
             async def on_ready(connection):
-                self.connection = connection  # Stocke la connexion
+                self.connection = connection
                 self.ws_active = True
                 self.update_connection_indicator(True)
                 self.update_status("🔌 WebSocket LCU connecté (mode réactif).")
+                logging.info("WebSocket: Connecté au client LCU.")
                 await self._refresh_player_and_region()
 
-                # Masquage automatique de la fenêtre après 3s si activé
                 if self.auto_hide_on_connect:
                     self.root.after(3000, self.hide_window)
 
@@ -1363,25 +1478,30 @@ class LoLAssistant:
                 self.ws_active = False
                 self.update_connection_indicator(False)
                 self.update_status("🛑 LoL déconnecté.")
+                logging.info("WebSocket: Déconnecté.")
 
                 if self.close_app_on_lol_exit:
-                    print("Fermeture automatique demandée.")
+                    logging.info("Fermeture de l'application (Option activée).")
                     self.root.after(100, self.quit_app)
                 else:
                     self.root.after(100, self.show_window)
 
-            @connector.ws.register('/lol-login/v1/session')
+            @connector.ws.register(EP_LOGIN)
             async def _ws_login_session(connection, event):
                 data = event.data or {}
                 if data.get('status') == "SUCCEEDED":
-                    self.update_status("🔄 Changement de compte détecté. Mise à jour...")
+                    self.update_status("🔄 Login détecté...")
                     await self._refresh_player_and_region()
 
-            # Phase de jeu (C'est ici que tout se décide)
-            @connector.ws.register('/lol-gameflow/v1/gameflow-phase')
+            # Phase de jeu (GameFlow)
+            @connector.ws.register(EP_GAMEFLOW)
             async def _ws_phase(connection, event):
                 phase = event.data
                 if not phase: return
+
+                # Log le changement de phase pour le debug
+                if phase != self.current_phase:
+                    logging.info(f"Phase changée : {self.current_phase} -> {phase}")
 
                 self.current_phase = phase
                 emoji = {
@@ -1391,52 +1511,48 @@ class LoLAssistant:
                 }.get(phase, "ℹ️")
                 self.update_status(f"{emoji} Phase : {phase}")
 
-                # 1. Si on revient au Menu ou en Recherche (quelqu'un a refusé ou game finie)
-                # On réinitialise le flag pour que le son puisse sonner à la prochaine trouvaille
                 if phase in ("Lobby", "Matchmaking", "None"):
                     self.has_played_accept_sound = False
-                    self.has_played_gamestart_sound = False # On reset aussi le start au cas où
-
-                # 2. Si on arrive en Champ Select (Partie validée)
+                
                 if phase == "ChampSelect":
                     self._reset_between_games()
                     await self._champ_select_tick()
 
-                # 3. Début de partie (Juste la notif visuelle, pas de son comme demandé avant)
                 if phase in ("GameStart", "InProgress"):
                     self._notify_game_start_once()
 
-                # 4. Fin de partie
                 if phase in ("EndOfGame", "PreEndOfGame"):
                     self._reset_between_games()
 
-                # 5. Rejouer auto
                 if phase in ("EndOfGame", "WaitingForStats"):
                     await self._handle_post_game()
 
             # Ready-check
-            @connector.ws.register('/lol-matchmaking/v1/ready-check')
+            @connector.ws.register(EP_READY_CHECK)
             async def _ws_ready(connection, event):
                 if self.current_phase not in ["Matchmaking", "ReadyCheck", "None", "Lobby"]: return
                 data = event.data or {}
                 
                 if self.auto_accept_enabled and data.get('state') == 'InProgress' and data.get('playerResponse') != 'Accepted':
-                    await connection.request('post', '/lol-matchmaking/v1/ready-check/accept')
-                    self.update_status("✅ Partie acceptée automatiquement (WS) !")
+                    await connection.request('post', f'{EP_READY_CHECK}/accept')
+                    self.update_status("✅ Partie acceptée (Auto) !")
+                    logging.info("Action: Ready Check accepté.")
                     if not self.has_played_accept_sound:
                         self.has_played_accept_sound = True
-                        try: pygame.mixer.Sound(resource_path("config/son.wav")).play()
-                        except Exception: pass
+                        try: 
+                            if self.sound_effect: self.sound_effect.play()
+                        except Exception as e:
+                            logging.error(f"Erreur lecture son : {e}")
 
-            # Champ select session -> tick immédiat
-            @connector.ws.register('/lol-champ-select/v1/session')
+            # Champ select session
+            @connector.ws.register(EP_SESSION)
             async def _ws_cs_session(connection, event):
                 if self.cs_tick_lock.locked(): return
                 async with self.cs_tick_lock:
                     await self._champ_select_tick()
 
-            # Champ select timer -> tick immédiat
-            @connector.ws.register('/lol-champ-select/v1/session/timer')
+            # Champ select timer
+            @connector.ws.register(EP_SESSION_TIMER)
             async def _ws_cs_timer(connection, event):
                 if time() - self._last_cs_timer_fetch > 0.2:
                     await self._champ_select_timer_tick()
@@ -1445,7 +1561,7 @@ class LoLAssistant:
             loop.run_until_complete(connector.start())
 
         except Exception as e:
-            print(f"[WS] Erreur: {e}", flush=True)
+            logging.critical(f"[WS] Erreur critique dans la boucle WebSocket : {e}", exc_info=True)
             self.ws_active = False
 
     def toggle_theme(self):
