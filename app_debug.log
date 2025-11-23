@@ -1,2 +1,5 @@
 2025-11-23 20:34:13,795 - INFO - [app.py:50] - DPI Awareness activé.
 2025-11-23 20:34:14,047 - INFO - [app.py:916] - Audio: Service initialisé.
+2025-11-23 21:52:34,159 - INFO - [app.py:50] - DPI Awareness activé.
+2025-11-23 21:52:34,300 - INFO - [app.py:916] - Audio: Service initialisé.
+2025-11-23 21:52:35,136 - INFO - [app.py:1469] - WebSocket: Connecté au client LCU.
