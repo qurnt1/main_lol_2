@@ -8,3 +8,9 @@ OTP LOL.exe
 # Python caches
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.pdb
+
+# Logs d'application
+app_debug.log
