@@ -27,8 +27,8 @@ Un assistant de bureau moderne pour League of Legends qui automatise la phase de
 
 1.  **Clonez le dépôt :**
     ```bash
-    git clone https://github.com/qurnt1/main_lol.git
-    cd MAIN_LOL
+    git clone https://github.com/qurnt1/main_lol_2.git
+    cd MAIN_LOL_2
     ```
 
 2.  **Installez les dépendances :**
