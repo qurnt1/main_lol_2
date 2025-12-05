@@ -2,7 +2,7 @@
 MAIN LOL - Assistant pour League of Legends
 ------------------------------------------
 Auteur: Qurnt1
-Version: 5.0
+Version: 5.2
 """
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -32,10 +32,9 @@ import unicodedata
 from typing import Optional, Dict, Any, List, Tuple
 from lcu_driver import Connector
 import asyncio
-import logging  # <--- AJOUT IMPORTANT
+import logging
 
-# --- 1. CONFIGURATION DU LOGGING (Remplace les prints) ---
-# Cela va créer un fichier 'app_debug.log' à côté de ton script/exe
+# --- 1. CONFIGURATION DU LOGGING ---
 logging.basicConfig(
     filename='app_debug.log',
     level=logging.INFO,
@@ -43,41 +42,35 @@ logging.basicConfig(
     encoding='utf-8'
 )
 
-# --- 2. GESTION DU HIGH DPI (Pour écrans 4K / Zoom Windows) ---
+# --- 2. GESTION DU HIGH DPI ---
 try:
     from ctypes import windll
     windll.shcore.SetProcessDpiAwareness(1)
-    logging.info("DPI Awareness activé.")
-except Exception as e:
-    logging.warning(f"Impossible d'activer le DPI Awareness : {e}")
+except Exception:
+    pass
 
 # ───────────────────────────────────────────────────────────────────────────
-# CONSTANTES (Magic Strings)
+# CONSTANTES
 # ───────────────────────────────────────────────────────────────────────────
 
-# URLs DataDragon
 URL_DD_VERSIONS = "https://ddragon.leagueoflegends.com/api/versions.json"
 URL_DD_CHAMPIONS = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
 URL_DD_SUMMONERS = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/summoner.json"
 URL_DD_IMG_CHAMP = "https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{filename}"
 URL_DD_IMG_SPELL = "https://ddragon.leagueoflegends.com/cdn/{version}/img/spell/{filename}"
 
-# Endpoints LCU (API Locale & WebSocket)
 EP_SESSION = "/lol-champ-select/v1/session"
-EP_SESSION_TIMER = "/lol-champ-select/v1/session/timer"  # <--- AJOUTÉ
+EP_SESSION_TIMER = "/lol-champ-select/v1/session/timer"
 EP_SESSION_LEGACY = "/lol-champ-select-legacy/v1/session"
-EP_ACTIONS = "/lol-champ-select/v1/session/actions/{actionId}"
-EP_ACTIONS_LEGACY = "/lol-champ-select-legacy/v1/session/actions/{actionId}"
 EP_GAMEFLOW = "/lol-gameflow/v1/gameflow-phase"
 EP_READY_CHECK = "/lol-matchmaking/v1/ready-check"
 EP_PICKABLE = "/lol-champ-select/v1/pickable-champion-ids"
-EP_MY_SELECTION = "/lol-champ-select/v1/session/my-selection"
 EP_CURRENT_SUMMONER = "/lol-summoner/v1/current-summoner"
 EP_CHAT_ME = "/lol-chat/v1/me"
 EP_LOGIN = "/lol-login/v1/session"
 
 # ───────────────────────────────────────────────────────────────────────────
-# UTILITAIRES GENERAUX
+# UTILITAIRES
 # ───────────────────────────────────────────────────────────────────────────
 
 def resource_path(relative_path: str) -> str:
@@ -85,29 +78,20 @@ def resource_path(relative_path: str) -> str:
         base_path = sys._MEIPASS
     else:
         base_path = os.path.dirname(os.path.abspath(__file__))
-    
-    if relative_path.startswith("./"):
-        relative_path = relative_path[2:]
-    elif relative_path.startswith(".\\"):
-        relative_path = relative_path[2:]
-        
+    if relative_path.startswith("./"): relative_path = relative_path[2:]
+    elif relative_path.startswith(".\\"): relative_path = relative_path[2:]
     return os.path.join(base_path, relative_path)
 
 def get_appdata_path(filename: str) -> str:
     app_data_dir = os.getenv('APPDATA') 
     app_folder = os.path.join(app_data_dir, "MainLoL")
     if not os.path.exists(app_folder):
-        try:
-            os.makedirs(app_folder)
-        except OSError:
-            return filename
+        try: os.makedirs(app_folder)
+        except OSError: return filename
     return os.path.join(app_folder, filename)
 
-# ───────────────────────────────────────────────────────────────────────────
-# CONFIGURATION
-# ───────────────────────────────────────────────────────────────────────────
-
 PARAMETERS_PATH = get_appdata_path("parameters.json")
+LOCKFILE_PATH = os.path.join(tempfile.gettempdir(), 'main_lol.lock')
 
 DEFAULT_PARAMS = {
     "auto_accept_enabled": True,
@@ -131,14 +115,11 @@ DEFAULT_PARAMS = {
 }
 
 REGION_LIST = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
-
 SUMMONER_SPELL_MAP = {
     "Barrier": 21, "Cleanse": 1, "Exhaust": 3, "Flash": 4, "Ghost": 6,
     "Heal": 7, "Ignite": 14, "Smite": 11, "Teleport": 12, "(Aucun)": 0
 }
 SUMMONER_SPELL_LIST = sorted(list(SUMMONER_SPELL_MAP.keys()))
-
-LOCKFILE_PATH = os.path.join(tempfile.gettempdir(), 'main_lol.lock')
 
 def check_single_instance():
     if os.path.exists(LOCKFILE_PATH):
@@ -146,35 +127,25 @@ def check_single_instance():
             with open(LOCKFILE_PATH, 'r') as f:
                 pid = int(f.read())
             if pid != os.getpid() and psutil.pid_exists(pid):
-                print("L'application est déjà en cours d'exécution.")
                 sys.exit(0)
-        except Exception as e:
-            # On affiche l'erreur si on n'arrive pas à lire le PID
-            print(f"[SYSTEM] Erreur lecture lockfile : {e}")
-            pass # On continue quand même si le fichier est corrompu
-    
+        except: pass
     try:
-        with open(LOCKFILE_PATH, 'w') as f:
-            f.write(str(os.getpid()))
-    except Exception as e:
-        print(f"[SYSTEM] Impossible de créer le lockfile : {e}")
+        with open(LOCKFILE_PATH, 'w') as f: f.write(str(os.getpid()))
+    except: pass
 
 def remove_lockfile():
     try:
-        if os.path.exists(LOCKFILE_PATH):
-            os.remove(LOCKFILE_PATH)
-    except Exception as e:
-        print(f"[SYSTEM] Erreur suppression lockfile : {e}")
+        if os.path.exists(LOCKFILE_PATH): os.remove(LOCKFILE_PATH)
+    except: pass
 
 check_single_instance()
 
 # ───────────────────────────────────────────────────────────────────────────
-# DATA DRAGON (Champions + Sorts + Images)
+# DATA DRAGON
 # ───────────────────────────────────────────────────────────────────────────
 
 class DataDragon:
-    VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
-    CHAMP_LIST_URL_TPL = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
+    URL_VERSIONS = "https://ddragon.leagueoflegends.com/api/versions.json"
     CACHE_FILE = os.path.join(tempfile.gettempdir(), "mainlol_ddragon_champions.json")
 
     def __init__(self):
@@ -195,20 +166,22 @@ class DataDragon:
         s = re.sub(r"[^a-z0-9]+", "", s)
         return s
 
-    def _load_from_cache(self) -> bool:
+    def _load_from_cache(self, target_version=None) -> bool:
         try:
             if os.path.exists(self.CACHE_FILE):
                 with open(self.CACHE_FILE, "r", encoding="utf-8") as f:
                     payload = json.load(f)
-                self.version = payload.get("version")
+                cached_version = payload.get("version")
+                if target_version and cached_version != target_version:
+                    return False
+                self.version = cached_version
                 self.by_norm_name = {k: int(v) for k, v in payload.get("by_norm_name", {}).items()}
                 self.by_id = {int(k): v for k, v in payload.get("by_id", {}).items()}
                 self.name_by_id = {int(k): v for k, v in payload.get("name_by_id", {}).items()}
                 self.all_names = sorted(list(self.name_by_id.values()))
                 self.loaded = True
                 return True
-        except Exception as e:
-            print(f"[DataDragon] Erreur lecture cache : {e}")
+        except: pass
         return False
 
     def _save_cache(self):
@@ -220,22 +193,31 @@ class DataDragon:
                     "by_id": self.by_id,
                     "name_by_id": self.name_by_id,
                 }, f)
-        except Exception as e:
-            print(f"[DataDragon] Erreur écriture cache : {e}")
+        except: pass
 
     def load(self):
         if self.loaded: return
-        if self._load_from_cache(): return
+        import requests
+        online_version = None
+        try:
+            versions = requests.get(self.URL_VERSIONS, timeout=5).json()
+            online_version = versions[0]
+        except: pass
+        
+        if self._load_from_cache(target_version=online_version): return
 
         try:
-            import requests
-            # Utilisation de la constante
-            versions = requests.get(URL_DD_VERSIONS, timeout=5).json()
-            version = versions[0]
-            # Utilisation de la constante
-            data = requests.get(URL_DD_CHAMPIONS.format(version=version), timeout=7).json()
-            
+            if not online_version: 
+                versions = requests.get(self.URL_VERSIONS, timeout=5).json()
+                online_version = versions[0]
+
+            url_champs = URL_DD_CHAMPIONS.format(version=online_version)
+            data = requests.get(url_champs, timeout=10).json()
             champs = data.get("data", {})
+            self.by_id = {}
+            self.name_by_id = {}
+            self.by_norm_name = {}
+
             for champ_slug, info in champs.items():
                 champ_name = info.get("name") or champ_slug
                 champ_id = int(info.get("key"))
@@ -244,22 +226,19 @@ class DataDragon:
                 self.by_norm_name[self._normalize(champ_name)] = champ_id
                 self.by_norm_name[self._normalize(info.get("id", champ_slug))] = champ_id
 
-            aliases = {"wukong": "monkeyking"}
+            aliases = {"wukong": "monkeyking", "renata": "renataglasc"}
             for k, v in aliases.items():
                 nk, nv = self._normalize(k), self._normalize(v)
                 if nv in self.by_norm_name:
                     self.by_norm_name[nk] = self.by_norm_name[nv]
 
-            self.version = version
+            self.version = online_version
             self.all_names = sorted(list(self.name_by_id.values()))
             self.loaded = True
             self._save_cache()
-            logging.info(f"[DataDragon] Chargé avec succès (v{self.version})")
-
-        except Exception as e:
-            logging.error(f"[DataDragon] Mode hors ligne activé suite à erreur : {e}")
-            # Mode hors ligne (fallback basique)
-            basic = {"garen": 86, "teemo": 17, "ashe": 22, "lux": 99, "ezreal": 81}
+        except:
+            # Fallback
+            basic = {"garen": 86, "teemo": 17, "ashe": 22, "lux": 99}
             for n, cid in basic.items():
                 self.by_norm_name[n] = cid
                 self.by_id[cid] = {"name": n.title(), "key": str(cid)}
@@ -271,39 +250,26 @@ class DataDragon:
     def get_champion_icon(self, name_or_id) -> Optional[Image.Image]:
         cid = self.resolve_champion(name_or_id)
         if not cid: return None
-        
         champ_data = self.by_id.get(cid)
         if not champ_data: return None
-            
         image_filename = champ_data.get("image", {}).get("full")
         if not image_filename: return None
-
         cache_dir = os.path.join(tempfile.gettempdir(), "mainlol_icons")
-        if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir, exist_ok=True)
-            
+        if not os.path.exists(cache_dir): os.makedirs(cache_dir, exist_ok=True)
         local_path = os.path.join(cache_dir, image_filename)
-
         if os.path.exists(local_path):
-            try: 
-                return Image.open(local_path)
-            except Exception as e: 
-                logging.warning(f"[DataDragon] Image corrompue ({local_path}) : {e}")
-
-        # Utilisation de la constante pour l'URL Image
+            try: return Image.open(local_path)
+            except: pass
         url = URL_DD_IMG_CHAMP.format(version=self.version, filename=image_filename)
         try:
             import requests
             from io import BytesIO
             r = requests.get(url, timeout=5)
             if r.status_code == 200:
-                img_data = BytesIO(r.content)
-                img = Image.open(img_data)
-                with open(local_path, "wb") as f:
-                    f.write(r.content)
+                img = Image.open(BytesIO(r.content))
+                with open(local_path, "wb") as f: f.write(r.content)
                 return img
-        except Exception as e:
-            logging.error(f"Erreur DL image {image_filename}: {e}")
+        except: pass
         return None
     
     def resolve_champion(self, name_or_id: Any) -> Optional[int]:
@@ -317,47 +283,11 @@ class DataDragon:
     def id_to_name(self, cid: int) -> Optional[str]:
         self.load()
         return self.name_by_id.get(cid)
-
-
-        
-        champ_data = self.by_id.get(cid)
-        if not champ_data: return None
-            
-        image_filename = champ_data.get("image", {}).get("full")
-        if not image_filename: return None
-
-        cache_dir = os.path.join(tempfile.gettempdir(), "mainlol_icons")
-        if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir, exist_ok=True)
-            
-        local_path = os.path.join(cache_dir, image_filename)
-
-        if os.path.exists(local_path):
-            try: 
-                return Image.open(local_path)
-            except Exception as e: 
-                print(f"[DataDragon] Image corrompue ({local_path}) : {e}")
-
-        url = f"https://ddragon.leagueoflegends.com/cdn/{self.version}/img/champion/{image_filename}"
-        try:
-            import requests
-            from io import BytesIO
-            r = requests.get(url, timeout=5)
-            if r.status_code == 200:
-                img_data = BytesIO(r.content)
-                img = Image.open(img_data)
-                with open(local_path, "wb") as f:
-                    f.write(r.content)
-                return img
-        except Exception as e:
-            print(f"Erreur DL image {image_filename}: {e}")
-        return None
-
+    
     def load_summoners(self):
         if self.summoner_loaded: return
         if not self.version: self.load() 
-
-        url = f"https://ddragon.leagueoflegends.com/cdn/{self.version}/data/en_US/summoner.json"
+        url = URL_DD_SUMMONERS.format(version=self.version)
         try:
             import requests
             r = requests.get(url, timeout=5)
@@ -369,42 +299,33 @@ class DataDragon:
                     if name and image_full:
                         self.summoner_data[name] = image_full
                 self.summoner_loaded = True
-        except Exception as e:
-            print(f"Erreur loading summoners: {e}")
+        except: pass
 
     def get_summoner_icon(self, spell_name) -> Optional[Image.Image]:
         if spell_name == "(Aucun)" or not spell_name: return None
         self.load_summoners()
         image_filename = self.summoner_data.get(spell_name)
         if not image_filename: return None
-
         cache_dir = os.path.join(tempfile.gettempdir(), "mainlol_spells")
-        if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir, exist_ok=True)
-            
+        if not os.path.exists(cache_dir): os.makedirs(cache_dir, exist_ok=True)
         local_path = os.path.join(cache_dir, image_filename)
-
         if os.path.exists(local_path):
             try: return Image.open(local_path)
             except: pass
-
-        url = f"https://ddragon.leagueoflegends.com/cdn/{self.version}/img/spell/{image_filename}"
+        url = URL_DD_IMG_SPELL.format(version=self.version, filename=image_filename)
         try:
             import requests
             from io import BytesIO
             r = requests.get(url, timeout=5)
             if r.status_code == 200:
-                img_data = BytesIO(r.content)
-                img = Image.open(img_data)
-                with open(local_path, "wb") as f:
-                    f.write(r.content)
+                img = Image.open(BytesIO(r.content))
+                with open(local_path, "wb") as f: f.write(r.content)
                 return img
-        except Exception as e:
-            print(f"Erreur DL spell {spell_name}: {e}")
+        except: pass
         return None
 
 # ───────────────────────────────────────────────────────────────────────────
-# FENETRE DES PARAMETRES
+# SETTINGS WINDOW
 # ───────────────────────────────────────────────────────────────────────────
 
 class SettingsWindow:
@@ -412,8 +333,6 @@ class SettingsWindow:
         self.parent = parent
         self.window = ttk.Toplevel(parent.root)
         self.window.title("Paramètres - MAIN LOL")
-        
-        # CORRECTION 1 : Hauteur augmentée (680 -> 750)
         self.window.geometry("500x750") 
         self.window.resizable(False, False)
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -430,21 +349,19 @@ class SettingsWindow:
         self.summ_var = tk.BooleanVar(value=parent.auto_summoners_enabled)
         self.summ_auto_var = tk.BooleanVar(value=parent.summoner_name_auto_detect)
         self.summ_entry_var = tk.StringVar(value=parent.manual_summoner_name)
+        self.saved_manual_name = parent.manual_summoner_name
         self.play_again_var = tk.BooleanVar(value=parent.auto_play_again_enabled)
         self.meta_runes_var = tk.BooleanVar(value=parent.auto_meta_runes_enabled)
         self.auto_hide_var = tk.BooleanVar(value=parent.auto_hide_on_connect)
         self.close_on_exit_var = tk.BooleanVar(value=parent.close_app_on_lol_exit)
 
-        # Listes
         try:
             self.parent.dd.load()
             self.all_champions = self.parent.dd.all_names
-        except Exception as e:
-            print(f"[Settings] Erreur chargement DataDragon : {e}")
+        except:
             self.all_champions = ["Garen", "Teemo", "Ashe"]
 
         self.spell_list = SUMMONER_SPELL_LIST[:]
-
         self.create_widgets()
         self.window.after(100, self.toggle_summoner_entry)
         self.window.after(1000, self._poll_summoner_label)
@@ -452,109 +369,105 @@ class SettingsWindow:
     def create_widgets(self):
         frame = ttk.Frame(self.window, padding=15)
         frame.pack(fill="both", expand=True)
-        
         frame.columnconfigure(0, weight=0) 
         frame.columnconfigure(1, weight=1) 
 
-        # --- ROW 0 : Auto-Accept ---
-        ttk.Checkbutton(
-            frame, text="Accepter automatiquement les parties", variable=self.auto_var,
-            command=lambda: setattr(self.parent, 'auto_accept_enabled', self.auto_var.get()),
-            bootstyle="success-round-toggle"
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=5)
+        # ROW 0
+        ttk.Checkbutton(frame, text="Accepter automatiquement les parties", variable=self.auto_var,
+                        command=lambda: setattr(self.parent, 'auto_accept_enabled', self.auto_var.get()),
+                        bootstyle="success-round-toggle").grid(row=0, column=0, columnspan=2, sticky="w", pady=5)
 
-        # CORRECTION 2 : Auto-Pick déplacé ICI (Avant le Ban)
-        
-        # --- ROW 1 : Checkbox Auto-Pick ---
-        ttk.Checkbutton(
-            frame, text="Auto-Pick (Priorité)", variable=self.pick_var,
-            command=lambda: (setattr(self.parent, 'auto_pick_enabled', self.pick_var.get()), self.toggle_pick()),
-            bootstyle="info-round-toggle"
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        # ROW 1 (Auto Pick)
+        ttk.Checkbutton(frame, text="Auto-Pick (Priorité)", variable=self.pick_var,
+                        command=lambda: (setattr(self.parent, 'auto_pick_enabled', self.pick_var.get()), self.toggle_pick()),
+                        bootstyle="info-round-toggle").grid(row=1, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        # --- ROW 2, 3, 4 : Les 3 Picks ---
-        # Pick 1
+        # ROW 2-4 (Picks)
         ttk.Label(frame, text="Pick 1 :").grid(row=2, column=0, sticky="e", padx=5, pady=3)
         self.btn_pick_1 = ttk.Button(frame, text=self.parent.selected_pick_1, bootstyle="secondary-outline")
         self.btn_pick_1.grid(row=2, column=1, sticky="ew", padx=5, pady=3)
         self.btn_pick_1.configure(command=lambda: self._open_champion_picker("pick", 1))
 
-        # Pick 2
         ttk.Label(frame, text="Pick 2 :").grid(row=3, column=0, sticky="e", padx=5, pady=3)
         self.btn_pick_2 = ttk.Button(frame, text=self.parent.selected_pick_2, bootstyle="secondary-outline")
         self.btn_pick_2.grid(row=3, column=1, sticky="ew", padx=5, pady=3)
         self.btn_pick_2.configure(command=lambda: self._open_champion_picker("pick", 2))
 
-        # Pick 3
         ttk.Label(frame, text="Pick 3 :").grid(row=4, column=0, sticky="e", padx=5, pady=3)
         self.btn_pick_3 = ttk.Button(frame, text=self.parent.selected_pick_3, bootstyle="secondary-outline")
         self.btn_pick_3.grid(row=4, column=1, sticky="ew", padx=5, pady=3)
         self.btn_pick_3.configure(command=lambda: self._open_champion_picker("pick", 3))
 
-        # CORRECTION 2 (Suite) : Auto-Ban déplacé APRÈS les picks
+        # ROW 5 (Auto Ban)
+        ttk.Checkbutton(frame, text="Auto-Ban", variable=self.ban_var,
+                        command=lambda: (setattr(self.parent, 'auto_ban_enabled', self.ban_var.get()), self.toggle_ban()),
+                        bootstyle="danger-round-toggle").grid(row=5, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        # --- ROW 5 : Checkbox Auto-Ban ---
-        ttk.Checkbutton(
-            frame, text="Auto-Ban", variable=self.ban_var,
-            command=lambda: (setattr(self.parent, 'auto_ban_enabled', self.ban_var.get()), self.toggle_ban()),
-            bootstyle="danger-round-toggle"
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(15, 5))
-
-        # --- ROW 6 : Bouton Ban ---
+        # ROW 6 (Ban Button)
         ttk.Label(frame, text="Bannir :").grid(row=6, column=0, sticky="e", padx=5)
         self.btn_ban = ttk.Button(frame, text=self.parent.selected_ban, bootstyle="secondary-outline")
         self.btn_ban.grid(row=6, column=1, sticky="ew", padx=5)
         self.btn_ban.configure(command=lambda: self._open_champion_picker("ban"))
 
-        # --- ROW 7 : Checkbox Summoners ---
-        ttk.Checkbutton(
-            frame, text="Auto Summoners", variable=self.summ_var,
-            command=lambda: (setattr(self.parent, 'auto_summoners_enabled', self.summ_var.get()), self.toggle_spells()),
-            bootstyle="warning-round-toggle"
-        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        # ROW 7 (Auto Summoners)
+        ttk.Checkbutton(frame, text="Auto Summoners", variable=self.summ_var,
+                        command=lambda: (setattr(self.parent, 'auto_summoners_enabled', self.summ_var.get()), self.toggle_spells()),
+                        bootstyle="warning-round-toggle").grid(row=7, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        # --- ROW 8, 9 : Sorts ---
-        # Sort 1
+        # ROW 8-9 (Spells)
         ttk.Label(frame, text="Sort 1 :").grid(row=8, column=0, sticky="e", padx=5, pady=3)
         self.btn_spell_1 = ttk.Button(frame, text=self.parent.global_spell_1, bootstyle="secondary-outline")
         self.btn_spell_1.grid(row=8, column=1, sticky="ew", padx=5, pady=3)
         self.btn_spell_1.configure(command=lambda: self._open_spell_picker(1))
 
-        # Sort 2
         ttk.Label(frame, text="Sort 2 :").grid(row=9, column=0, sticky="e", padx=5, pady=3)
         self.btn_spell_2 = ttk.Button(frame, text=self.parent.global_spell_2, bootstyle="secondary-outline")
         self.btn_spell_2.grid(row=9, column=1, sticky="ew", padx=5, pady=3)
         self.btn_spell_2.configure(command=lambda: self._open_spell_picker(2))
 
-        # --- ROW 10 : Auto Runes ---
-        ttk.Checkbutton(
-            frame, text="Auto Runes (via LCU)", variable=self.meta_runes_var,
-            command=lambda: setattr(self.parent, 'auto_meta_runes_enabled', self.meta_runes_var.get()),
-            bootstyle="primary-round-toggle"
-        ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        # ROW 10 (Runes)
+        ttk.Checkbutton(frame, text="Auto Runes (via LCU)", variable=self.meta_runes_var,
+                        command=lambda: setattr(self.parent, 'auto_meta_runes_enabled', self.meta_runes_var.get()),
+                        bootstyle="primary-round-toggle").grid(row=10, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        # --- ROW 11 : Checkbox Pseudo ---
-        ttk.Checkbutton(
-            frame, text="Détection auto (Pseudo & Région)", variable=self.summ_auto_var,
-            command=self.toggle_summoner_entry, bootstyle="secondary-round-toggle"
-        ).grid(row=11, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        # --- ROW 11 : Détection Auto (Design demandé : Bouton à gauche, Label à côté) ---
+        detect_frame = ttk.Frame(frame)
+        detect_frame.grid(row=11, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        
+        # Le bouton Switch avec la logique de bascule et refresh
+        def on_auto_toggle():
+            self.toggle_summoner_entry()
+            if self.summ_auto_var.get():
+                self.parent.force_refresh_summoner()
+            self._update_detect_label_text()
 
-        # --- ROW 12 : Input Pseudo ---
+        self.switch_auto = ttk.Checkbutton(
+            detect_frame, 
+            variable=self.summ_auto_var,
+            command=on_auto_toggle, 
+            bootstyle="round-toggle"
+        )
+        self.switch_auto.pack(side="left", padx=(0, 10))
+
+        self.lbl_auto_detect = ttk.Label(detect_frame, text="Détection auto du compte")
+        self.lbl_auto_detect.pack(side="left")
+
+        # ROW 12 (Pseudo Entry)
         ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=12, column=0, sticky="e", padx=5, pady=5)
         self.summ_entry = ttk.Entry(frame, textvariable=self.summ_entry_var, state="readonly")
         self.summ_entry.grid(row=12, column=1, sticky="ew", padx=5)
 
-        # --- ROW 13 : Input Région ---
+        # ROW 13 (Region)
         ttk.Label(frame, text="Région :", anchor="w").grid(row=13, column=0, sticky="e", padx=5, pady=5)
         self.region_var = tk.StringVar(value=self.parent.region)
         self.region_cb = ttk.Combobox(frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
         self.region_cb.grid(row=13, column=1, sticky="ew", padx=5)
         self.region_cb.bind("<<ComboboxSelected>>", lambda e: setattr(self.parent, 'region', self.region_var.get()))
 
-        # --- ROW 14 : Séparateur ---
+        # ROW 14 (Sep)
         ttk.Separator(frame).grid(row=14, column=0, columnspan=2, sticky="we", pady=(15, 10))
         
-        # --- ROW 15 : Options Diverses (Frame interne) ---
+        # ROW 15 (Misc)
         misc_frame = ttk.Frame(frame)
         misc_frame.grid(row=15, column=0, columnspan=2, sticky="w")
         
@@ -570,8 +483,6 @@ class SettingsWindow:
                         command=lambda: setattr(self.parent, 'close_app_on_lol_exit', self.close_on_exit_var.get()),
                         bootstyle="danger-round-toggle").pack(anchor="w", pady=2)
 
-        # --- Bouton Fermer ---
-        # On utilise pack ici car c'est en dehors de la grille principale
         ttk.Button(self.window, text="Fermer", command=self.on_close, bootstyle="primary").pack(pady=(0, 20), side="bottom")
 
         self.toggle_pick()
@@ -579,7 +490,6 @@ class SettingsWindow:
         self.toggle_spells()
         self.toggle_summoner_entry()
         
-        # Initialisation des boutons
         self._update_btn_content(self.btn_ban, self.parent.selected_ban, is_champ=True)
         self._update_btn_content(self.btn_pick_1, self.parent.selected_pick_1, is_champ=True)
         self._update_btn_content(self.btn_pick_2, self.parent.selected_pick_2, is_champ=True)
@@ -587,23 +497,15 @@ class SettingsWindow:
         self._update_btn_content(self.btn_spell_1, self.parent.global_spell_1, is_champ=False)
         self._update_btn_content(self.btn_spell_2, self.parent.global_spell_2, is_champ=False)
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # LE CHAMPION PICKER (GRID + SEARCH)
-    # ──────────────────────────────────────────────────────────────────────────
-    
     def _open_champion_picker(self, context="pick", slot_num=1):
         picker = ttk.Toplevel(self.window)
         picker.iconphoto(False, self.window._icon_img)
         picker.title(f"Sélectionner Champion ({context.title()})")
-        picker.geometry("480x600")
-        x = self.window.winfo_x() + 20
-        y = self.window.winfo_y() + 20
-        picker.geometry(f"+{x}+{y}")
+        picker.geometry(f"480x600+{self.window.winfo_x()+20}+{self.window.winfo_y()+20}")
 
         search_frame = ttk.Frame(picker, padding=10)
         search_frame.pack(fill="x")
         ttk.Label(search_frame, text="Rechercher :").pack(side="left")
-        
         search_var = tk.StringVar()
         search_entry = ttk.Entry(search_frame, textvariable=search_var)
         search_entry.pack(side="left", fill="x", expand=True, padx=5)
@@ -616,78 +518,49 @@ class SettingsWindow:
 
         excluded = set()
         if context == "pick":
-            p1 = self.parent.selected_pick_1
-            p2 = self.parent.selected_pick_2
-            p3 = self.parent.selected_pick_3
+            p1, p2, p3 = self.parent.selected_pick_1, self.parent.selected_pick_2, self.parent.selected_pick_3
             banned = self.parent.selected_ban
-            
             if banned: excluded.add(banned)
-            if slot_num == 1:
-                if p2: excluded.add(p2)
-                if p3: excluded.add(p3)
-            elif slot_num == 2:
-                if p1: excluded.add(p1)
-                if p3: excluded.add(p3)
-            elif slot_num == 3:
-                if p1: excluded.add(p1)
-                if p2: excluded.add(p2)
+            if slot_num == 1: excluded.update({p2, p3})
+            elif slot_num == 2: excluded.update({p1, p3})
+            elif slot_num == 3: excluded.update({p1, p2})
         
         valid_champs = [c for c in self.all_champions if c not in excluded]
 
         def populate_grid(filter_text=""):
-            for widget in grid_frame.winfo_children():
-                widget.destroy()
-
+            for widget in grid_frame.winfo_children(): widget.destroy()
             filter_text = filter_text.lower()
             row, col = 0, 0
-            max_cols = 4 
-
             for champ_name in valid_champs:
                 if filter_text in champ_name.lower():
-                    btn = ttk.Button(
-                        grid_frame, 
-                        text=champ_name, 
-                        bootstyle="link", 
-                        compound="top",
-                        command=lambda c=champ_name: on_select(c)
-                    )
+                    btn = ttk.Button(grid_frame, text=champ_name, bootstyle="link", compound="top",
+                                     command=lambda c=champ_name: on_select(c))
                     btn.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
                     self._load_img_into_btn(btn, champ_name, is_champ=True)
-
                     col += 1
-                    if col >= max_cols:
+                    if col >= 4:
                         col = 0
                         row += 1
 
         def on_select(champ_name):
             if context == "ban":
                 self.parent.selected_ban = champ_name
-                self._update_btn_content(self.btn_ban, champ_name, is_champ=True)
+                self._update_btn_content(self.btn_ban, champ_name, True)
             elif context == "pick":
-                if slot_num == 1:
+                if slot_num == 1: 
                     self.parent.selected_pick_1 = champ_name
-                    self._update_btn_content(self.btn_pick_1, champ_name, is_champ=True)
+                    self._update_btn_content(self.btn_pick_1, champ_name, True)
                 elif slot_num == 2:
                     self.parent.selected_pick_2 = champ_name
-                    self._update_btn_content(self.btn_pick_2, champ_name, is_champ=True)
+                    self._update_btn_content(self.btn_pick_2, champ_name, True)
                 elif slot_num == 3:
                     self.parent.selected_pick_3 = champ_name
-                    self._update_btn_content(self.btn_pick_3, champ_name, is_champ=True)
+                    self._update_btn_content(self.btn_pick_3, champ_name, True)
             picker.destroy()
 
         search_var.trace("w", lambda *args: populate_grid(search_var.get()))
-        
-        def on_enter(event):
-            children = grid_frame.winfo_children()
-            if children and isinstance(children[0], ttk.Button):
-                children[0].invoke()
-        
-        search_entry.bind("<Return>", on_enter)
+        search_entry.bind("<Return>", lambda e: grid_frame.winfo_children()[0].invoke() if grid_frame.winfo_children() else None)
         populate_grid()
-
-    # ──────────────────────────────────────────────────────────────────────────
-    # LE SPELL PICKER (GRID)
-    # ──────────────────────────────────────────────────────────────────────────
 
     def _open_spell_picker(self, spell_slot_num):
         if not self.summ_var.get(): return
@@ -696,26 +569,25 @@ class SettingsWindow:
         picker.title(f"Choisir Sort {spell_slot_num}")
         picker.geometry(f"350x350+{self.window.winfo_x()+50}+{self.window.winfo_y()+100}")
         picker.resizable(False, False)
-        
         container = ttk.Frame(picker, padding=10)
         container.pack(fill="both", expand=True)
 
         def on_pick(spell_name):
-            other_spell = self.parent.global_spell_2 if spell_slot_num == 1 else self.parent.global_spell_1
-            if spell_name == other_spell and spell_name != "(Aucun)":
+            other = self.parent.global_spell_2 if spell_slot_num == 1 else self.parent.global_spell_1
+            if spell_name == other and spell_name != "(Aucun)":
                 if spell_slot_num == 1:
                     self.parent.global_spell_2 = "(Aucun)"
-                    self._update_btn_content(self.btn_spell_2, "(Aucun)", is_champ=False)
+                    self._update_btn_content(self.btn_spell_2, "(Aucun)", False)
                 else:
                     self.parent.global_spell_1 = "(Aucun)"
-                    self._update_btn_content(self.btn_spell_1, "(Aucun)", is_champ=False)
-
+                    self._update_btn_content(self.btn_spell_1, "(Aucun)", False)
+            
             if spell_slot_num == 1:
                 self.parent.global_spell_1 = spell_name
-                self._update_btn_content(self.btn_spell_1, spell_name, is_champ=False)
+                self._update_btn_content(self.btn_spell_1, spell_name, False)
             else:
                 self.parent.global_spell_2 = spell_name
-                self._update_btn_content(self.btn_spell_2, spell_name, is_champ=False)
+                self._update_btn_content(self.btn_spell_2, spell_name, False)
             picker.destroy()
 
         row, col = 0, 0
@@ -724,54 +596,40 @@ class SettingsWindow:
             f.grid(row=row, column=col, padx=5, pady=5)
             btn = ttk.Button(f, bootstyle="link", command=lambda s=spell: on_pick(s))
             btn.pack()
-            self._load_img_into_btn(btn, spell, is_champ=False)
-            try:
-                from ttkbootstrap.tooltip import ToolTip
-                ToolTip(btn, text=spell)
-            except ImportError:
-                # Pas besoin de spammer, on l'affiche une fois ou on ignore silencieusement si on sait que c'est manquant
-                pass 
-            except Exception as e:
-                print(f"[UI] Erreur Tooltip : {e}")
+            self._load_img_into_btn(btn, spell, False)
             col += 1
-            if col > 3: 
+            if col > 3:
                 col = 0
                 row += 1
-
-    # ──────────────────────────────────────────────────────────────────────────
-    # UTILITAIRES UI
-    # ──────────────────────────────────────────────────────────────────────────
 
     def _update_btn_content(self, btn_widget, name, is_champ=True):
         if not name: name = "..."
         def task():
-            if is_champ: img_pil = self.parent.dd.get_champion_icon(name)
-            else: img_pil = self.parent.dd.get_summoner_icon(name)
-            
-            if img_pil:
-                img_pil = img_pil.resize((30, 30), Image.LANCZOS)
-                photo = ImageTk.PhotoImage(img_pil)
+            if is_champ: img = self.parent.dd.get_champion_icon(name)
+            else: img = self.parent.dd.get_summoner_icon(name)
+            if img:
+                img = img.resize((30, 30), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
                 def ui():
                     if btn_widget.winfo_exists():
                         btn_widget.configure(image=photo, text=f"  {name}", compound="left")
                         btn_widget.image = photo
                 btn_widget.after(0, ui)
             else:
-                def ui_clear():
+                def ui_c():
                     if btn_widget.winfo_exists():
                         btn_widget.configure(image='', text=f"  {name}", compound="left")
-                btn_widget.after(0, ui_clear)
+                btn_widget.after(0, ui_c)
         Thread(target=task, daemon=True).start()
 
     def _load_img_into_btn(self, btn_widget, name, is_champ=True):
         def task():
-            if is_champ: img_pil = self.parent.dd.get_champion_icon(name)
-            else: img_pil = self.parent.dd.get_summoner_icon(name)
-            
-            if img_pil:
+            if is_champ: img = self.parent.dd.get_champion_icon(name)
+            else: img = self.parent.dd.get_summoner_icon(name)
+            if img:
                 size = (40, 40) if is_champ else (48, 48)
-                img_pil = img_pil.resize(size, Image.LANCZOS)
-                photo = ImageTk.PhotoImage(img_pil)
+                img = img.resize(size, Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
                 def ui():
                     if btn_widget.winfo_exists():
                         btn_widget.configure(image=photo)
@@ -781,42 +639,64 @@ class SettingsWindow:
 
     def toggle_summoner_entry(self):
         if self.summ_auto_var.get():
+            current_entry = self.summ_entry_var.get()
+            current_auto = self.parent._get_auto_summoner_name()
+            if current_entry != current_auto and current_entry != "(détection auto...)":
+                self.saved_manual_name = current_entry
+            
             self.summ_entry.configure(state="readonly")
             self.region_cb.configure(state="disabled")
-            self.summ_entry_var.set(self.parent._get_auto_summoner_name() or "(détection auto...)")
-            auto_region = self.parent._platform_for_websites()
-            self.region_var.set(auto_region)
-            setattr(self.parent, 'region', auto_region)
+            
+            self.parent.force_refresh_summoner()
+            auto_name = self.parent._get_auto_summoner_name()
+            self.summ_entry_var.set(auto_name if auto_name else "(détection auto...)")
+            
+            auto_reg = self.parent._platform_for_websites()
+            self.region_var.set(auto_reg)
+            setattr(self.parent, 'region', auto_reg)
         else:
             self.summ_entry.configure(state="normal")
             self.region_cb.configure(state="readonly")
-            self.summ_entry_var.set(self.parent.manual_summoner_name)
+            self.summ_entry_var.set(self.saved_manual_name)
             self.region_var.set(self.parent.region)
+        self._update_detect_label_text()
 
     def toggle_pick(self):
-        state = "normal" if self.pick_var.get() else "disabled"
-        self.btn_pick_1.configure(state=state)
-        self.btn_pick_2.configure(state=state)
-        self.btn_pick_3.configure(state=state)
+        st = "normal" if self.pick_var.get() else "disabled"
+        self.btn_pick_1.configure(state=st)
+        self.btn_pick_2.configure(state=st)
+        self.btn_pick_3.configure(state=st)
 
     def toggle_ban(self):
         self.btn_ban.configure(state="normal" if self.ban_var.get() else "disabled")
 
     def toggle_spells(self):
-        state = "normal" if self.summ_var.get() else "disabled"
-        self.btn_spell_1.configure(state=state)
-        self.btn_spell_2.configure(state=state)
+        st = "normal" if self.summ_var.get() else "disabled"
+        self.btn_spell_1.configure(state=st)
+        self.btn_spell_2.configure(state=st)
+
+    def _update_detect_label_text(self):
+        """Met à jour le texte du label uniquement si LoL est connecté."""
+        detected = self.parent._get_auto_summoner_name()
+
+        if self.parent.ws_active and detected:
+            self.lbl_auto_detect.configure(text=f"Détection auto du compte (compte détecté : {detected})")
+        else:
+            self.lbl_auto_detect.configure(text="Détection auto du compte")
 
     def _poll_summoner_label(self):
         if not self.window.winfo_exists(): return
+        self._update_detect_label_text()
         if self.summ_auto_var.get():
-            current = self.parent._get_auto_summoner_name() or "(détection auto...)"
-            if self.summ_entry_var.get() != current:
-                self.summ_entry_var.set(current)
-            auto_region = self.parent._platform_for_websites()
-            if self.region_var.get() != auto_region:
-                self.region_var.set(auto_region)
-                setattr(self.parent, 'region', auto_region)
+            curr = self.parent._get_auto_summoner_name() or "(détection auto...)"
+            if self.summ_entry_var.get() != curr: self.summ_entry_var.set(curr)
+            areg = self.parent._platform_for_websites()
+            if self.region_var.get() != areg:
+                self.region_var.set(areg)
+                setattr(self.parent, 'region', areg)
+        
+        if not self.summ_auto_var.get():
+            self.saved_manual_name = self.summ_entry_var.get()
         self.window.after(1000, self._poll_summoner_label)
 
     def on_close(self):
@@ -829,13 +709,13 @@ class SettingsWindow:
         self.parent.auto_meta_runes_enabled = self.meta_runes_var.get()
         self.parent.auto_hide_on_connect = self.auto_hide_var.get()
         self.parent.close_app_on_lol_exit = self.close_on_exit_var.get()
-
         self.parent.save_parameters()
         self.window.destroy()
 
 # ───────────────────────────────────────────────────────────────────────────
-# APPLICATION PRINCIPALE
+# MAIN APP
 # ───────────────────────────────────────────────────────────────────────────
+
 class LoLAssistant:
     SUMMONER_SPELL_MAP = SUMMONER_SPELL_MAP
 
@@ -846,7 +726,6 @@ class LoLAssistant:
         self.root.geometry("380x180")
         self.root.resizable(False, False)
 
-        # Variables d'état
         self.running = True
         self.auto_accept_enabled = DEFAULT_PARAMS["auto_accept_enabled"]
         self.auto_pick_enabled = DEFAULT_PARAMS["auto_pick_enabled"]
@@ -859,19 +738,17 @@ class LoLAssistant:
         self.auto_meta_runes_enabled = DEFAULT_PARAMS["auto_meta_runes_enabled"]
         self.auto_hide_on_connect = DEFAULT_PARAMS["auto_hide_on_connect"]
         self.close_app_on_lol_exit = DEFAULT_PARAMS["close_app_on_lol_exit"]
-        self.settings_win = None # Variable pour stocker la référence de la fenêtre des paramètres
+        self.settings_win = None
 
-        # Logique de pseudo
         self.summoner = ""
-        self.summoner_id: Optional[int] = None
-        self.puuid: Optional[str] = None
-        self.auto_game_name: Optional[str] = None
-        self.auto_tag_line: Optional[str] = None
-        self.manual_summoner_name: str = DEFAULT_PARAMS["manual_summoner_name"]
-        self.summoner_name_auto_detect: bool = DEFAULT_PARAMS["summoner_name_auto_detect"]
+        self.summoner_id = None
+        self.puuid = None
+        self.auto_game_name = None
+        self.auto_tag_line = None
+        self.manual_summoner_name = DEFAULT_PARAMS["manual_summoner_name"]
+        self.summoner_name_auto_detect = DEFAULT_PARAMS["summoner_name_auto_detect"]
 
-        # Etats CS
-        self.completed_actions: set[int] = set()
+        self.completed_actions = set()
         self.has_picked = False
         self.has_banned = False
         self.intent_done = False
@@ -881,23 +758,18 @@ class LoLAssistant:
         self.assigned_position = ""
         self.cs_tick_lock = asyncio.Lock()
 
-        # Timers
         self.last_game_start_notify_ts = 0.0
         self.game_start_cooldown = 12.0
         self._last_cs_session_fetch = 0.0
         self._last_cs_timer_fetch = 0.0
-        self._cs_session_period = 0.7
-        self._cs_timer_period = 0.30
         self.has_played_accept_sound = False
 
-        # Modules
         self.dd = DataDragon()
         self.dd.load()
         self._stop_event = Event()
         self.ws_active = False
-        self.connection: Optional[Connector.connection] = None
+        self.connection = None
 
-        # Picks & Spells
         self.selected_pick_1 = DEFAULT_PARAMS["selected_pick_1"]
         self.selected_pick_2 = DEFAULT_PARAMS["selected_pick_2"]
         self.selected_pick_3 = DEFAULT_PARAMS["selected_pick_3"]
@@ -909,14 +781,10 @@ class LoLAssistant:
         self.theme_var = tk.StringVar(value=self.theme)
         self.load_config()
 
-        # --- GESTION AUDIO SECURISEE ---
         try:
             pygame.mixer.init()
             self.sound_effect = pygame.mixer.Sound(resource_path("config/son.wav"))
-            logging.info("Audio: Service initialisé.")
-        except Exception as e:
-            logging.error(f"Audio: Impossible d'initialiser le son : {e}")
-            self.sound_effect = None
+        except: self.sound_effect = None
 
         self.create_ui()
         self.create_system_tray()
@@ -930,14 +798,11 @@ class LoLAssistant:
             self.root.after(100, lambda: self.update_connection_indicator(False))
 
     def load_config(self):
-        if not os.path.exists(PARAMETERS_PATH):
-            config = DEFAULT_PARAMS
+        if not os.path.exists(PARAMETERS_PATH): config = DEFAULT_PARAMS
         else:
             try:
-                with open(PARAMETERS_PATH, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-            except Exception:
-                config = DEFAULT_PARAMS
+                with open(PARAMETERS_PATH, 'r', encoding='utf-8') as f: config = json.load(f)
+            except: config = DEFAULT_PARAMS
 
         self.auto_accept_enabled = config.get('auto_accept_enabled', self.auto_accept_enabled)
         self.auto_pick_enabled = config.get('auto_pick_enabled', self.auto_pick_enabled)
@@ -988,11 +853,13 @@ class LoLAssistant:
             with open(PARAMETERS_PATH, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
             self.show_toast("Paramètres sauvegardés !")
-        except Exception as e:
-            print(f"[Config] Erreur CRITIQUE sauvegarde json : {e}")
-            self.show_toast(f"Erreur sauvegarde: {e}")
+        except: self.show_toast(f"Erreur sauvegarde")
 
-    # ── UI ─────────────────────────────────────────────────────────────────
+    def force_refresh_summoner(self):
+        if self.ws_active and self.connection:
+            logging.info("Refresh forcé des données Summoner demandé via UI.")
+            if hasattr(self, 'loop'):
+                asyncio.run_coroutine_threadsafe(self._refresh_player_and_region(), self.loop)
 
     def create_ui(self):
         garen_icon = ImageTk.PhotoImage(Image.open(resource_path("./config/imgs/garen.webp")).resize((32, 32)))
@@ -1024,46 +891,29 @@ class LoLAssistant:
         cog.bind("<Enter>", on_enter)
         cog.bind("<Leave>", on_leave)
         cog.bind("<Button-1>", lambda e: self.open_settings())
-        try:
-            from ttkbootstrap.tooltip import ToolTip
-            ToolTip(cog, text="Paramètres")
-        except: pass
 
         opgg_btn = ttk.Button(self.root, text="📊 OP.GG", bootstyle="success-outline", padding=(20, 10), width=15, command=lambda: webbrowser.open(self.build_opgg_url()))
         opgg_btn.place(relx=0.5, rely=0.75, anchor="center")
-        try: ToolTip(opgg_btn, text="Voir votre profil OP.GG")
-        except: pass
 
         self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
 
     def create_system_tray(self):
         try:
             image = Image.open(resource_path("./config/imgs/garen.webp")).resize((64, 64))
-            menu = pystray.Menu(
-                pystray.MenuItem("Afficher/Masquer", self.toggle_window),
-                pystray.MenuItem("Quitter", self.quit_app)
-            )
+            menu = pystray.Menu(pystray.MenuItem("Afficher/Masquer", self.toggle_window), pystray.MenuItem("Quitter", self.quit_app))
             self.icon = pystray.Icon("MAIN LOL", image, "MAIN LOL", menu)
             Thread(target=self.icon.run, daemon=True).start()
-        except Exception as e:
-            print(f"[SystemTray] Échec création icône : {e}")
+        except: pass
 
     def setup_hotkeys(self):
         try:
             keyboard.add_hotkey('alt+p', self.open_porofessor)
             keyboard.add_hotkey('alt+c', self.toggle_window)
-        except Exception as e:
-            print(f"[Hotkeys] Erreur d'enregistrement des raccourcis : {e}")
-
-    # ── Helpers URLs ──────────────────────────────────────────────────────
+        except: pass
 
     def _platform_for_websites(self) -> str:
-        mapping = {
-            "euw1": "euw", "eun1": "eune", "na1": "na", "kr": "kr", "jp1": "jp",
-            "br1": "br", "la1": "lan", "la2": "las", "oc1": "oce", "tr1": "tr", "ru": "ru"
-        }
-        if not self.summoner_name_auto_detect:
-            return self.region.lower()
+        mapping = {"euw1": "euw", "eun1": "eune", "na1": "na", "kr": "kr", "jp1": "jp", "br1": "br", "la1": "lan", "la2": "las", "oc1": "oce", "tr1": "tr", "ru": "ru"}
+        if not self.summoner_name_auto_detect: return self.region.lower()
         return mapping.get((self.platform_routing or "").lower(), "euw")
 
     def _riot_url_name(self) -> str:
@@ -1087,8 +937,6 @@ class LoLAssistant:
         if self.auto_game_name and self.auto_tag_line: return f"{self.auto_game_name}#{self.auto_tag_line}"
         return self.summoner or None
 
-    # ── Actions UI ────────────────────────────────────────────────────────
-
     def open_porofessor(self):
         if self._riot_id_display_string(): webbrowser.open(self.build_porofessor_url())
 
@@ -1098,21 +946,17 @@ class LoLAssistant:
             self.root.after(0, self.root.lift)
 
     def hide_window(self, icon=None):
-        if self.root.state() != 'withdrawn':
-            self.root.after(0, self.root.withdraw)
+        if self.root.state() != 'withdrawn': self.root.after(0, self.root.withdraw)
 
     def toggle_window(self, icon=None):
         if self.root.state() == 'withdrawn': self.show_window()
         else: self.hide_window()
 
     def open_settings(self):
-        # Si la fenêtre existe déjà et est ouverte, on la met au premier plan
         if self.settings_win and self.settings_win.window.winfo_exists():
             self.settings_win.window.lift()
             self.settings_win.window.focus_force()
             return
-        
-        # Sinon on la crée
         self.settings_win = SettingsWindow(self)
 
     def quit_app(self):
@@ -1121,11 +965,9 @@ class LoLAssistant:
         self._stop_event.set()
         try:
             if hasattr(self, 'icon'): self.icon.stop()
-        except Exception: pass
+        except: pass
         self.root.quit()
         remove_lockfile()
-
-    # ── Helpers UI ────────────────────────────────────────────────────────
 
     def update_status(self, message: str):
         now = datetime.now().strftime("%H:%M:%S")
@@ -1157,24 +999,18 @@ class LoLAssistant:
             toast = ttk.Label(self.root, text=message, bootstyle="success", font=("Segoe UI", 10, "bold"))
             toast.place(relx=0.5, rely=0.98, anchor="s")
             self.root.after(duration, toast.destroy)
-        except Exception: pass
-
-    # ── LCU Logic ─────────────────────────────────────────────────────────
+        except: pass
 
     async def _refresh_player_and_region(self):
         if not self.connection: return
         chat_me = None
         resp_chat = await self.connection.request('get', "/lol-chat/v1/me")
-        if resp_chat.status == 200:
-            chat_me = await resp_chat.json()
-            
+        if resp_chat.status == 200: chat_me = await resp_chat.json()
         if isinstance(chat_me, dict):
             self.auto_game_name = chat_me.get("gameName")
             self.auto_tag_line = chat_me.get("gameTag")
-            if self.auto_game_name and self.auto_tag_line:
-                self.summoner = f"{self.auto_game_name}#{self.auto_tag_line}"
-            else:
-                self.summoner = chat_me.get("name", "Inconnu")
+            if self.auto_game_name and self.auto_tag_line: self.summoner = f"{self.auto_game_name}#{self.auto_tag_line}"
+            else: self.summoner = chat_me.get("name", "Inconnu")
             self.summoner_id = chat_me.get("summonerId")
             self.puuid = chat_me.get("puuid")
             self.update_status(f"👤 Connecté : {self._riot_id_display_string()}")
@@ -1187,17 +1023,14 @@ class LoLAssistant:
 
         reg = None
         resp_reg = await self.connection.request('get', "/riotclient/get_region_locale")
-        if resp_reg.status != 200:
-            resp_reg = await self.connection.request('get', "/riotclient/region-locale")
+        if resp_reg.status != 200: resp_reg = await self.connection.request('get', "/riotclient/region-locale")
         if resp_reg.status == 200: reg = await resp_reg.json()
-
         if isinstance(reg, dict):
             platform = (reg.get("platformId") or reg.get("region") or "").lower()
             if platform:
                 self.platform_routing = platform
                 self.region_routing = self._platform_to_region_routing(platform)
-                if self.summoner_name_auto_detect:
-                    self.region = self._platform_for_websites()
+                if self.summoner_name_auto_detect: self.region = self._platform_for_websites()
 
     @staticmethod
     def _platform_to_region_routing(platform: str) -> str:
@@ -1225,7 +1058,6 @@ class LoLAssistant:
         self._last_cs_session_fetch = 0.0
         self._last_cs_timer_fetch = 0.0
         self.has_played_accept_sound = False
-        print("[RESET] Flags internes remis à zéro.", flush=True)
 
     async def _champ_select_timer_tick(self):
         if not self.connection: return
@@ -1237,7 +1069,7 @@ class LoLAssistant:
             phase = timer.get("phase") or timer.get("timerPhase") or ""
             remain = timer.get("phaseTimeRemaining") or timer.get("timeRemainingInPhase") or timer.get("adjustedTimeLeftInPhaseMs") or timer.get("totalTimeInPhase") or timer.get("timeLeftInPhase") or 0
             try: remain_sec = int(remain / 1000) if remain and remain > 1000 else int(remain)
-            except Exception: remain_sec = 0
+            except: remain_sec = 0
             self.update_status(f"👑 ChampSelect • Phase timer: {phase} • reste ~{remain_sec}s")
 
     async def _champ_select_tick(self):
@@ -1247,6 +1079,15 @@ class LoLAssistant:
         if resp_sess.status != 200: resp_sess = await self.connection.request('get', "/lol-champ-select-legacy/v1/session")
         if resp_sess.status == 200: session = await resp_sess.json()
         else: return
+
+        # -----------------------------------------------------------
+        # MODIF ARAM / MODE DE JEU
+        # Si benchEnabled est true, c'est généralement ARAM.
+        # On ne fait pas d'auto pick/ban en ARAM.
+        # -----------------------------------------------------------
+        if session.get("benchEnabled") is True:
+            # On peut quand même tenter runes/spells si besoin, mais pas pick/ban
+            return 
 
         local_id = session.get("localPlayerCellId")
         if local_id is None: return
@@ -1263,39 +1104,48 @@ class LoLAssistant:
         actions_groups = session.get("actions", []) or []
         my_pick_action, my_ban_action = self._get_my_pending_actions(actions_groups, local_id)
 
-        # Auto Pick
+        # -----------------------------------------------------------
+        # PRE-PICK (INTENT) - Seulement si le pick n'est pas encore fait
+        # -----------------------------------------------------------
         pick_1_name = self.selected_pick_1
         if self.auto_pick_enabled and not self.intent_done and pick_1_name and my_pick_action:
-            if time() - self.last_intent_try_ts > 0.45:
-                cid = self.dd.resolve_champion(pick_1_name)
-                if isinstance(cid, int):
-                    current_cid = my_pick_action.get("championId", 0) or 0
-                    if current_cid != cid:
-                        url_v1 = f"/lol-champ-select/v1/session/actions/{my_pick_action['id']}"
-                        url_legacy = f"/lol-champ-select-legacy/v1/session/actions/{my_pick_action['id']}"
-                        r = await self.connection.request('patch', url_v1, json={"championId": cid})
-                        if r.status == 404: r = await self.connection.request('patch', url_legacy, json={"championId": cid})
-                        
-                        cname = self.dd.id_to_name(cid) or str(cid)
-                        if r and r.status < 400:
+            # Si on n'a pas encore validé le pick, on hover (pré-pick)
+            if not my_pick_action.get("completed"):
+                if time() - self.last_intent_try_ts > 0.45:
+                    cid = self.dd.resolve_champion(pick_1_name)
+                    if isinstance(cid, int):
+                        current_cid = my_pick_action.get("championId", 0) or 0
+                        if current_cid != cid:
+                            url_v1 = f"/lol-champ-select/v1/session/actions/{my_pick_action['id']}"
+                            url_legacy = f"/lol-champ-select-legacy/v1/session/actions/{my_pick_action['id']}"
+                            # On patch juste pour hover, sans 'completed': True
+                            r = await self.connection.request('patch', url_v1, json={"championId": cid})
+                            if r.status == 404: r = await self.connection.request('patch', url_legacy, json={"championId": cid})
+                            
+                            cname = self.dd.id_to_name(cid) or str(cid)
+                            if r and r.status < 400:
+                                self.intent_done = True
+                                self.update_status(f"🪄 Pré-pick (intention) sur {cname}")
+                        else:
                             self.intent_done = True
-                            self.update_status(f"🪄 Pré-pick (intention) sur {cname}")
-                    else:
-                        self.intent_done = True
-                self.last_intent_try_ts = time()
+                    self.last_intent_try_ts = time()
 
         if time() - self.last_action_try_ts < 0.28: return
 
-        # Auto Ban
+        # -----------------------------------------------------------
+        # BAN - Uniquement si c'est MON tour de ban (isInProgress)
+        # -----------------------------------------------------------
         if self.auto_ban_enabled and not self.has_banned and my_ban_action and self.selected_ban:
-            if bool(my_ban_action.get("isInProgress")) is True:
+            if my_ban_action.get("isInProgress") is True:
                 cid = self.dd.resolve_champion(self.selected_ban)
                 if isinstance(cid, int):
                     await self._perform_action_patch_then_complete(my_ban_action, cid, "BAN", self.selected_ban)
 
-        # Auto Pick Confirm
+        # -----------------------------------------------------------
+        # PICK - Uniquement si c'est MON tour de pick (isInProgress)
+        # -----------------------------------------------------------
         if self.auto_pick_enabled and not self.has_picked and my_pick_action:
-            if bool(my_pick_action.get("isInProgress")) is True:
+            if my_pick_action.get("isInProgress") is True:
                 pickable_ids = []
                 resp_picks = await self.connection.request('get', "/lol-champ-select/v1/pickable-champion-ids")
                 if resp_picks.status == 200: pickable_ids = await resp_picks.json()
@@ -1336,7 +1186,6 @@ class LoLAssistant:
 
         cname = champion_name or self.dd.id_to_name(champion_id) or str(champion_id)
         
-        # URL dynamique
         url_v1 = f"/lol-champ-select/v1/session/actions/{action_id}"
         url_legacy = f"/lol-champ-select-legacy/v1/session/actions/{action_id}"
         payload = {"championId": champion_id, "completed": True}
@@ -1344,8 +1193,7 @@ class LoLAssistant:
         logging.info(f"Tentative de {action_kind} sur {cname} (Action ID: {action_id})...")
 
         r = await self.connection.request("patch", url_v1, json=payload)
-        if r.status == 404: 
-            r = await self.connection.request("patch", url_legacy, json=payload)
+        if r.status == 404: r = await self.connection.request("patch", url_legacy, json=payload)
 
         if not r or r.status >= 400:
             logging.error(f"Échec {action_kind} sur {cname}. Code: {r.status if r else 'None'}")
@@ -1447,17 +1295,12 @@ class LoLAssistant:
                 self.update_status("✅ Rejouer auto réussi !")
                 break
 
-    # ── WebSocket (Désormais obligatoire) ─────────────────────
-
     def _ws_loop(self):
-        """
-        Active un listener WebSocket (lcu_driver est requis).
-        Utilise les constantes pour les endpoints.
-        """
         if Connector is None: return
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            self.loop = loop 
             connector = Connector()
 
             @connector.ready
@@ -1465,12 +1308,10 @@ class LoLAssistant:
                 self.connection = connection
                 self.ws_active = True
                 self.update_connection_indicator(True)
-                self.update_status("🔌 WebSocket LCU connecté (mode réactif).")
+                self.update_status("🔌 WebSocket LCU connecté.")
                 logging.info("WebSocket: Connecté au client LCU.")
                 await self._refresh_player_and_region()
-
-                if self.auto_hide_on_connect:
-                    self.root.after(3000, self.hide_window)
+                if self.auto_hide_on_connect: self.root.after(3000, self.hide_window)
 
             @connector.close
             async def on_close(connection):
@@ -1479,12 +1320,16 @@ class LoLAssistant:
                 self.update_connection_indicator(False)
                 self.update_status("🛑 LoL déconnecté.")
                 logging.info("WebSocket: Déconnecté.")
+                if self.close_app_on_lol_exit: self.root.after(100, self.quit_app)
+                else: self.root.after(100, self.show_window)
 
-                if self.close_app_on_lol_exit:
-                    logging.info("Fermeture de l'application (Option activée).")
-                    self.root.after(100, self.quit_app)
-                else:
-                    self.root.after(100, self.show_window)
+            @connector.ws.register(EP_CURRENT_SUMMONER)
+            async def _ws_summoner_change(connection, event):
+                await self._refresh_player_and_region()
+
+            @connector.ws.register(EP_CHAT_ME)
+            async def _ws_chat_me_change(connection, event):
+                await self._refresh_player_and_region()
 
             @connector.ws.register(EP_LOGIN)
             async def _ws_login_session(connection, event):
@@ -1493,65 +1338,34 @@ class LoLAssistant:
                     self.update_status("🔄 Login détecté...")
                     await self._refresh_player_and_region()
 
-            # Phase de jeu (GameFlow)
             @connector.ws.register(EP_GAMEFLOW)
             async def _ws_phase(connection, event):
                 phase = event.data
                 if not phase: return
-
-                # Log le changement de phase pour le debug
                 if phase != self.current_phase:
                     logging.info(f"Phase changée : {self.current_phase} -> {phase}")
-
                 self.current_phase = phase
-                emoji = {
-                    "None": "🏠", "Lobby": "🎮", "Matchmaking": "🔍", "ReadyCheck": "⏳",
-                    "ChampSelect": "👑", "GameStart": "🎯", "InProgress": "⚔️",
-                    "WaitingForStats": "📊", "PreEndOfGame": "🏆", "EndOfGame": "🎉"
-                }.get(phase, "ℹ️")
-                self.update_status(f"{emoji} Phase : {phase}")
-
-                if phase in ("Lobby", "Matchmaking", "None"):
-                    self.has_played_accept_sound = False
-                
+                self.update_status(f"ℹ️ Phase : {phase}")
                 if phase == "ChampSelect":
                     self._reset_between_games()
                     await self._champ_select_tick()
-
-                if phase in ("GameStart", "InProgress"):
-                    self._notify_game_start_once()
-
-                if phase in ("EndOfGame", "PreEndOfGame"):
-                    self._reset_between_games()
-
                 if phase in ("EndOfGame", "WaitingForStats"):
                     await self._handle_post_game()
 
-            # Ready-check
             @connector.ws.register(EP_READY_CHECK)
             async def _ws_ready(connection, event):
                 if self.current_phase not in ["Matchmaking", "ReadyCheck", "None", "Lobby"]: return
                 data = event.data or {}
-                
                 if self.auto_accept_enabled and data.get('state') == 'InProgress' and data.get('playerResponse') != 'Accepted':
                     await connection.request('post', f'{EP_READY_CHECK}/accept')
-                    self.update_status("✅ Partie acceptée (Auto) !")
-                    logging.info("Action: Ready Check accepté.")
-                    if not self.has_played_accept_sound:
-                        self.has_played_accept_sound = True
-                        try: 
-                            if self.sound_effect: self.sound_effect.play()
-                        except Exception as e:
-                            logging.error(f"Erreur lecture son : {e}")
+                    self.update_status("✅ Partie acceptée !")
 
-            # Champ select session
             @connector.ws.register(EP_SESSION)
             async def _ws_cs_session(connection, event):
                 if self.cs_tick_lock.locked(): return
                 async with self.cs_tick_lock:
                     await self._champ_select_tick()
 
-            # Champ select timer
             @connector.ws.register(EP_SESSION_TIMER)
             async def _ws_cs_timer(connection, event):
                 if time() - self._last_cs_timer_fetch > 0.2:
@@ -1569,11 +1383,6 @@ class LoLAssistant:
         self.root.style.theme_use(new_theme)
         self.theme = new_theme
         self.save_parameters()
-
-
-# ───────────────────────────────────────────────────────────────────────────
-# POINT D'ENTREE
-# ───────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     try:
