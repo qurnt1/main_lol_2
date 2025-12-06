@@ -6,7 +6,7 @@
 
 Un assistant de bureau moderne pour League of Legends qui automatise la phase de sélection (Champ Select), gère vos runes et améliore votre expérience de jeu.
 
-## ✨ Nouveautés de la v5.0
+## ✨ Nouveautés de la v6.0
 
 * 🖼️ **Sélecteurs Visuels :** Fini les listes textuelles ! Choisissez vos champions et sorts via une interface visuelle fluide avec recherche intégrée.
 * ⚡ **Runes Natives (LCU) :** L'application injecte désormais directement les pages recommandées par Riot (plus rapide et fiable que les sites tiers).
