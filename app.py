@@ -2,7 +2,7 @@
 MAIN LOL - Assistant pour League of Legends
 ------------------------------------------
 Auteur: Qurnt1
-Version: 5.2
+Version: 5.4 (UI Friendly + Robust Logic)
 """
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -373,12 +373,12 @@ class SettingsWindow:
         frame.columnconfigure(1, weight=1) 
 
         # ROW 0
-        ttk.Checkbutton(frame, text="Accepter automatiquement les parties", variable=self.auto_var,
+        ttk.Checkbutton(frame, text="✅ Accepter la partie (Auto-Accept)", variable=self.auto_var,
                         command=lambda: setattr(self.parent, 'auto_accept_enabled', self.auto_var.get()),
                         bootstyle="success-round-toggle").grid(row=0, column=0, columnspan=2, sticky="w", pady=5)
 
         # ROW 1 (Auto Pick)
-        ttk.Checkbutton(frame, text="Auto-Pick (Priorité)", variable=self.pick_var,
+        ttk.Checkbutton(frame, text="👑 Sécuriser mon Champion (Auto-Pick)", variable=self.pick_var,
                         command=lambda: (setattr(self.parent, 'auto_pick_enabled', self.pick_var.get()), self.toggle_pick()),
                         bootstyle="info-round-toggle").grid(row=1, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
@@ -399,7 +399,7 @@ class SettingsWindow:
         self.btn_pick_3.configure(command=lambda: self._open_champion_picker("pick", 3))
 
         # ROW 5 (Auto Ban)
-        ttk.Checkbutton(frame, text="Auto-Ban", variable=self.ban_var,
+        ttk.Checkbutton(frame, text="🚫 Bannir un Champion (Auto-Ban)", variable=self.ban_var,
                         command=lambda: (setattr(self.parent, 'auto_ban_enabled', self.ban_var.get()), self.toggle_ban()),
                         bootstyle="danger-round-toggle").grid(row=5, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
@@ -410,7 +410,7 @@ class SettingsWindow:
         self.btn_ban.configure(command=lambda: self._open_champion_picker("ban"))
 
         # ROW 7 (Auto Summoners)
-        ttk.Checkbutton(frame, text="Auto Summoners", variable=self.summ_var,
+        ttk.Checkbutton(frame, text="🪄 Configurer Sorts (Auto-Spells)", variable=self.summ_var,
                         command=lambda: (setattr(self.parent, 'auto_summoners_enabled', self.summ_var.get()), self.toggle_spells()),
                         bootstyle="warning-round-toggle").grid(row=7, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
@@ -426,7 +426,7 @@ class SettingsWindow:
         self.btn_spell_2.configure(command=lambda: self._open_spell_picker(2))
 
         # ROW 10 (Runes)
-        ttk.Checkbutton(frame, text="Auto Runes (via LCU)", variable=self.meta_runes_var,
+        ttk.Checkbutton(frame, text="🔮 Importer les Runes Meta (Auto-Runes)", variable=self.meta_runes_var,
                         command=lambda: setattr(self.parent, 'auto_meta_runes_enabled', self.meta_runes_var.get()),
                         bootstyle="primary-round-toggle").grid(row=10, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
@@ -471,15 +471,15 @@ class SettingsWindow:
         misc_frame = ttk.Frame(frame)
         misc_frame.grid(row=15, column=0, columnspan=2, sticky="w")
         
-        ttk.Checkbutton(misc_frame, text="\"Retour au salon\" automatique", variable=self.play_again_var,
+        ttk.Checkbutton(misc_frame, text="♻️ Rejouer automatiquement (Skip Honor)", variable=self.play_again_var,
                         command=lambda: setattr(self.parent, 'auto_play_again_enabled', self.play_again_var.get()),
                         bootstyle="info-round-toggle").pack(anchor="w", pady=2)
         
-        ttk.Checkbutton(misc_frame, text="Cacher l'application quand LoL est détecté", variable=self.auto_hide_var,
+        ttk.Checkbutton(misc_frame, text="🙈 Masquer l'app quand LoL se lance", variable=self.auto_hide_var,
                         command=lambda: setattr(self.parent, 'auto_hide_on_connect', self.auto_hide_var.get()),
                         bootstyle="secondary-round-toggle").pack(anchor="w", pady=2)
         
-        ttk.Checkbutton(misc_frame, text="Fermer l'application quand LoL se ferme", variable=self.close_on_exit_var,
+        ttk.Checkbutton(misc_frame, text="❌ Fermer l'app quand LoL se ferme", variable=self.close_on_exit_var,
                         command=lambda: setattr(self.parent, 'close_app_on_lol_exit', self.close_on_exit_var.get()),
                         bootstyle="danger-round-toggle").pack(anchor="w", pady=2)
 
@@ -747,6 +747,9 @@ class LoLAssistant:
         self.auto_tag_line = None
         self.manual_summoner_name = DEFAULT_PARAMS["manual_summoner_name"]
         self.summoner_name_auto_detect = DEFAULT_PARAMS["summoner_name_auto_detect"]
+        
+        # --- ANTI-SPAM LOG ---
+        self.last_reported_summoner = None 
 
         self.completed_actions = set()
         self.has_picked = False
@@ -876,7 +879,8 @@ class LoLAssistant:
         self.connection_indicator.place(relx=0.05, rely=0.05, anchor="nw")
         self.update_connection_indicator(False)
 
-        self.status_label = ttk.Label(self.root, text="🔌 En attente du WebSocket LCU...", style="Status.TLabel", justify="center", wraplength=380)
+        # UI FRIENDLY : Message d'accueil plus clair
+        self.status_label = ttk.Label(self.root, text="💤 En attente du lancement de League of Legends...", style="Status.TLabel", justify="center", wraplength=380)
         self.status_label.place(relx=0.5, rely=0.38, anchor="center")
 
         gear_img = ImageTk.PhotoImage(Image.open(resource_path("./config/imgs/gear.png")).resize((25, 30)))
@@ -892,7 +896,8 @@ class LoLAssistant:
         cog.bind("<Leave>", on_leave)
         cog.bind("<Button-1>", lambda e: self.open_settings())
 
-        opgg_btn = ttk.Button(self.root, text="📊 OP.GG", bootstyle="success-outline", padding=(20, 10), width=15, command=lambda: webbrowser.open(self.build_opgg_url()))
+        # UI FRIENDLY : Texte bouton
+        opgg_btn = ttk.Button(self.root, text="🔎 Voir mes stats (OP.GG)", bootstyle="success-outline", padding=(20, 10), width=22, command=lambda: webbrowser.open(self.build_opgg_url()))
         opgg_btn.place(relx=0.5, rely=0.75, anchor="center")
 
         self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
@@ -909,6 +914,7 @@ class LoLAssistant:
         try:
             keyboard.add_hotkey('alt+p', self.open_porofessor)
             keyboard.add_hotkey('alt+c', self.toggle_window)
+            keyboard.add_hotkey('f10', lambda: asyncio.run_coroutine_threadsafe(self._champ_select_tick(), self.loop))
         except: pass
 
     def _platform_for_websites(self) -> str:
@@ -1013,13 +1019,16 @@ class LoLAssistant:
             else: self.summoner = chat_me.get("name", "Inconnu")
             self.summoner_id = chat_me.get("summonerId")
             self.puuid = chat_me.get("puuid")
-            self.update_status(f"👤 Connecté : {self._riot_id_display_string()}")
         else:
             resp_me = await self.connection.request('get', "/lol-summoner/v1/current-summoner")
             if resp_me.status == 200:
                 me = await resp_me.json()
                 self.summoner = me.get("displayName", "Inconnu")
-                self.update_status(f"👤 Connecté (Legacy) : {self.summoner}")
+        
+        # --- ANTI-SPAM LOG ---
+        if self.summoner != self.last_reported_summoner:
+            self.update_status(f"👤 Connecté : {self._riot_id_display_string()}")
+            self.last_reported_summoner = self.summoner
 
         reg = None
         resp_reg = await self.connection.request('get', "/riotclient/get_region_locale")
@@ -1070,25 +1079,18 @@ class LoLAssistant:
             remain = timer.get("phaseTimeRemaining") or timer.get("timeRemainingInPhase") or timer.get("adjustedTimeLeftInPhaseMs") or timer.get("totalTimeInPhase") or timer.get("timeLeftInPhase") or 0
             try: remain_sec = int(remain / 1000) if remain and remain > 1000 else int(remain)
             except: remain_sec = 0
-            self.update_status(f"👑 ChampSelect • Phase timer: {phase} • reste ~{remain_sec}s")
 
     async def _champ_select_tick(self):
         if not self.connection: return
-        session = None
-        resp_sess = await self.connection.request('get', "/lol-champ-select/v1/session")
-        if resp_sess.status != 200: resp_sess = await self.connection.request('get', "/lol-champ-select-legacy/v1/session")
-        if resp_sess.status == 200: session = await resp_sess.json()
-        else: return
+        
+        try:
+            resp = await self.connection.request('get', "/lol-champ-select/v1/session")
+            if resp.status != 200: return
+            session = await resp.json()
+        except: return
 
-        # -----------------------------------------------------------
-        # MODIF ARAM / MODE DE JEU
-        # Si benchEnabled est true, c'est généralement ARAM.
-        # On ne fait pas d'auto pick/ban en ARAM.
-        # -----------------------------------------------------------
-        if session.get("benchEnabled") is True:
-            # On peut quand même tenter runes/spells si besoin, mais pas pick/ban
-            return 
-
+        if session.get("benchEnabled") is True: return 
+        
         local_id = session.get("localPlayerCellId")
         if local_id is None: return
 
@@ -1101,116 +1103,127 @@ class LoLAssistant:
                     self.assigned_position = pos
                     self.update_status(f"ℹ️ Rôle assigné détecté : {pos}")
 
-        actions_groups = session.get("actions", []) or []
-        my_pick_action, my_ban_action = self._get_my_pending_actions(actions_groups, local_id)
+        actions_groups = session.get("actions", [])
+        my_actions = []
+        for group in actions_groups:
+            for action in group:
+                if action.get("actorCellId") == local_id and not action.get("completed"):
+                    my_actions.append(action)
 
-        # -----------------------------------------------------------
-        # PRE-PICK (INTENT) - Seulement si le pick n'est pas encore fait
-        # -----------------------------------------------------------
-        pick_1_name = self.selected_pick_1
-        if self.auto_pick_enabled and not self.intent_done and pick_1_name and my_pick_action:
-            # Si on n'a pas encore validé le pick, on hover (pré-pick)
-            if not my_pick_action.get("completed"):
-                if time() - self.last_intent_try_ts > 0.45:
-                    cid = self.dd.resolve_champion(pick_1_name)
-                    if isinstance(cid, int):
-                        current_cid = my_pick_action.get("championId", 0) or 0
-                        if current_cid != cid:
-                            url_v1 = f"/lol-champ-select/v1/session/actions/{my_pick_action['id']}"
-                            url_legacy = f"/lol-champ-select-legacy/v1/session/actions/{my_pick_action['id']}"
-                            # On patch juste pour hover, sans 'completed': True
-                            r = await self.connection.request('patch', url_v1, json={"championId": cid})
-                            if r.status == 404: r = await self.connection.request('patch', url_legacy, json={"championId": cid})
-                            
-                            cname = self.dd.id_to_name(cid) or str(cid)
-                            if r and r.status < 400:
-                                self.intent_done = True
-                                self.update_status(f"🪄 Pré-pick (intention) sur {cname}")
-                        else:
-                            self.intent_done = True
-                    self.last_intent_try_ts = time()
+        # ─── PRE-PICK ─────────────────────────────────────────────
+        if self.auto_pick_enabled and self.selected_pick_1:
+            pick_action = next((a for a in my_actions if a.get("type") == "pick"), None)
+            if pick_action:
+                target_cid = self.dd.resolve_champion(self.selected_pick_1)
+                current_hover = pick_action.get("championId")
+                if target_cid and target_cid != 0 and current_hover != target_cid:
+                    if time() - self.last_intent_try_ts > 0.5:
+                        await self._hover_champion(pick_action["id"], target_cid)
+                        self.last_intent_try_ts = time()
 
-        if time() - self.last_action_try_ts < 0.28: return
+        # ─── ACTIONS (BAN & PICK) ────────────────────────────────
+        active_action = next((a for a in my_actions if a.get("isInProgress") is True), None)
 
-        # -----------------------------------------------------------
-        # BAN - Uniquement si c'est MON tour de ban (isInProgress)
-        # -----------------------------------------------------------
-        if self.auto_ban_enabled and not self.has_banned and my_ban_action and self.selected_ban:
-            if my_ban_action.get("isInProgress") is True:
-                cid = self.dd.resolve_champion(self.selected_ban)
-                if isinstance(cid, int):
-                    await self._perform_action_patch_then_complete(my_ban_action, cid, "BAN", self.selected_ban)
+        if active_action:
+            action_type = active_action.get("type")
+            
+            if action_type == "ban" and self.auto_ban_enabled:
+                await self._logic_do_ban(active_action)
 
-        # -----------------------------------------------------------
-        # PICK - Uniquement si c'est MON tour de pick (isInProgress)
-        # -----------------------------------------------------------
-        if self.auto_pick_enabled and not self.has_picked and my_pick_action:
-            if my_pick_action.get("isInProgress") is True:
-                pickable_ids = []
-                resp_picks = await self.connection.request('get', "/lol-champ-select/v1/pickable-champion-ids")
-                if resp_picks.status == 200: pickable_ids = await resp_picks.json()
-                
-                pickable_set = set(pickable_ids)
-                cid_to_pick, cname_to_pick = None, None
-                pick_list = [self.selected_pick_1, self.selected_pick_2, self.selected_pick_3]
+            elif action_type == "pick" and self.auto_pick_enabled:
+                await self._logic_do_pick(active_action)
 
-                for champ_name in pick_list:
-                    if not champ_name: continue
-                    cid = self.dd.resolve_champion(champ_name)
-                    if cid and cid in pickable_set:
-                        cid_to_pick, cname_to_pick = cid, champ_name
-                        self.update_status(f"👑 Pick Prio '{cname_to_pick}' (dispo) trouvé !")
-                        break
+    # ───────────────────────────────────────────────────────────────────────
+    # FONCTIONS D'EXECUTION ROBUSTES
+    # ───────────────────────────────────────────────────────────────────────
 
-                if cid_to_pick and cname_to_pick:
-                    await self._perform_action_patch_then_complete(my_pick_action, cid_to_pick, "PICK", cname_to_pick)
-                else:
-                    self.update_status("⚠️ Aucun pick prioritaire n'est disponible.")
+    async def _hover_champion(self, action_id, champion_id):
+        url = f"/lol-champ-select/v1/session/actions/{action_id}"
+        await self.connection.request('patch', url, json={"championId": champion_id})
 
+    async def _logic_do_ban(self, action):
+        if not self.selected_ban: return
+        if time() - self.last_action_try_ts < 0.1: return
         self.last_action_try_ts = time()
 
-    def _get_my_pending_actions(self, actions_groups: List[List[dict]], local_id: int) -> Tuple[Optional[dict], Optional[dict]]:
-        my_pick, my_ban = None, None
-        for group in actions_groups:
-            for act in group:
-                if act.get("actorCellId") != local_id or act.get("completed"): continue
-                if act.get("type") == "ban" and my_ban is None: my_ban = act
-                if act.get("type") == "pick" and my_pick is None: my_pick = act
-        return my_pick, my_ban
+        cid = self.dd.resolve_champion(self.selected_ban)
+        if not cid: return
 
-    async def _perform_action_patch_then_complete(self, action: dict, champion_id: int, action_kind: str, champion_name: Optional[str] = None):
-        if not self.connection: return
-        action_id = action.get("id")
-        if not isinstance(action_id, int): return
-        if action_id in self.completed_actions: return
-
-        cname = champion_name or self.dd.id_to_name(champion_id) or str(champion_id)
-        
-        url_v1 = f"/lol-champ-select/v1/session/actions/{action_id}"
-        url_legacy = f"/lol-champ-select-legacy/v1/session/actions/{action_id}"
-        payload = {"championId": champion_id, "completed": True}
-
-        logging.info(f"Tentative de {action_kind} sur {cname} (Action ID: {action_id})...")
-
-        r = await self.connection.request("patch", url_v1, json=payload)
-        if r.status == 404: r = await self.connection.request("patch", url_legacy, json=payload)
-
-        if not r or r.status >= 400:
-            logging.error(f"Échec {action_kind} sur {cname}. Code: {r.status if r else 'None'}")
-            return
-            
-        self.completed_actions.add(action_id)
-
-        if action_kind == "BAN":
+        success = await self._lock_in_champion(action["id"], cid)
+        if success:
             self.has_banned = True
-            self.update_status(f"🚫 {cname} banni automatiquement")
-            logging.info(f"Succès BAN {cname}")
-        elif action_kind == "PICK":
-            self.has_picked = True
-            self.update_status(f"👑 {cname} sélectionné automatiquement")
-            logging.info(f"Succès PICK {cname}")
-            if (self.auto_summoners_enabled or self.auto_meta_runes_enabled) and champion_name:
-                asyncio.create_task(self._set_spells_and_runes(champion_name))
+            # UI FRIENDLY
+            self.update_status(f"💀 Ciao ! {self.selected_ban} a été banni.")
+
+    async def _logic_do_pick(self, action):
+        """
+        Gère le pick avec Fallback instantané.
+        Si Pick 1 est refusé (ban/pris), il tente Pick 2 DANS LA MEME SECONDE.
+        """
+        if time() - self.last_action_try_ts < 0.1: return
+        self.last_action_try_ts = time()
+
+        pickable_ids = []
+        try:
+            r = await self.connection.request('get', "/lol-champ-select/v1/pickable-champion-ids")
+            if r.status == 200: pickable_ids = await r.json()
+        except: pass
+        
+        pickable_set = set(pickable_ids) if pickable_ids else set()
+        
+        # En custom game, la liste est souvent vide (bug API), on doit "forcer" l'essai
+        is_list_empty = (len(pickable_set) == 0)
+
+        # On itère sur les choix (Pick 1 -> Pick 2 -> Pick 3)
+        for name in [self.selected_pick_1, self.selected_pick_2, self.selected_pick_3]:
+            if not name: continue
+            cid = self.dd.resolve_champion(name)
+            if not cid: continue
+
+            # Condition pour essayer ce champion :
+            # 1. Soit il est explicitement dans la liste des dispos
+            # 2. Soit la liste est vide (bug custom) et on tente le coup "à l'aveugle"
+            should_try = (cid in pickable_set) or is_list_empty
+
+            if should_try:
+                # On tente de le lock
+                success = await self._lock_in_champion(action["id"], cid)
+                if success:
+                    self.has_picked = True
+                    # UI FRIENDLY
+                    self.update_status(f"🔒 {name} sécurisé ! À toi de jouer.")
+                    asyncio.create_task(self._set_spells_and_runes(name))
+                    return # C'est bon, on arrête tout, on a pick !
+                else:
+                    # Si ça échoue ici (et qu'on a forcé), ça veut dire qu'il est ban/pris.
+                    # On continue la boucle pour essayer le Pick 2 immédiatement.
+                    pass
+        
+        # Si on sort de la boucle sans return, c'est qu'on a tout raté
+        self.update_status("⚠️ Aucun champion dispo ou configuré (ou tous bannis) !")
+
+    async def _lock_in_champion(self, action_id, champion_id):
+        """
+        METHODE DOUBLE FORCE : On utilise l'ancienne et la nouvelle méthode
+        en même temps pour être sûr que ça valide.
+        """
+        url_action = f"/lol-champ-select/v1/session/actions/{action_id}"
+        
+        # 1. Sélectionner (Hover)
+        await self.connection.request('patch', url_action, json={"championId": champion_id})
+        
+        # 2. Petite pause technique indispensable pour certaines versions du client
+        await asyncio.sleep(0.05) 
+
+        # 3. FORCE METHODE 1 : "completed": True dans le patch (ancienne méthode, marche encore souvent)
+        await self.connection.request('patch', url_action, json={"championId": champion_id, "completed": True})
+
+        # 4. FORCE METHODE 2 : POST complete (nouvelle méthode officielle)
+        r = await self.connection.request('post', f"{url_action}/complete")
+        
+        # Si le serveur renvoie 2xx (Success), c'est gagné.
+        if r.status < 400: return True
+        return False # Echec (Probablement Ban ou Pris)
 
     async def _set_spells_and_runes(self, champion_name: str):
         try:
@@ -1279,11 +1292,10 @@ class LoLAssistant:
 
             if final_id:
                 await self.connection.request('put', "/lol-perks/v1/currentpage", data=str(final_id))
-                self.update_status(f"✅ Runes appliquées pour {champion_name} !")
+                # UI FRIENDLY
+                self.update_status(f"✨ Runes importées pour {champion_name} (Mode Tryhard)")
         except Exception as e:
             print(f"[Runes] Erreur application runes : {e}")
-            import traceback
-            traceback.print_exc()
 
     async def _handle_post_game(self):
         if not self.auto_play_again_enabled: return
@@ -1308,7 +1320,8 @@ class LoLAssistant:
                 self.connection = connection
                 self.ws_active = True
                 self.update_connection_indicator(True)
-                self.update_status("🔌 WebSocket LCU connecté.")
+                # UI FRIENDLY
+                self.update_status("⚡ Client LoL détecté ! Prêt à vous aider.")
                 logging.info("WebSocket: Connecté au client LCU.")
                 await self._refresh_player_and_region()
                 if self.auto_hide_on_connect: self.root.after(3000, self.hide_window)
@@ -1318,7 +1331,9 @@ class LoLAssistant:
                 self.connection = None
                 self.ws_active = False
                 self.update_connection_indicator(False)
-                self.update_status("🛑 LoL déconnecté.")
+                # UI FRIENDLY
+                self.update_status("💤 LoL fermé. En attente...")
+                self.last_reported_summoner = None 
                 logging.info("WebSocket: Déconnecté.")
                 if self.close_app_on_lol_exit: self.root.after(100, self.quit_app)
                 else: self.root.after(100, self.show_window)
@@ -1345,7 +1360,22 @@ class LoLAssistant:
                 if phase != self.current_phase:
                     logging.info(f"Phase changée : {self.current_phase} -> {phase}")
                 self.current_phase = phase
-                self.update_status(f"ℹ️ Phase : {phase}")
+                
+                # UI FRIENDLY : Traduction des phases
+                phase_map = {
+                    "Lobby": "🏠 Au Salon (Lobby)",
+                    "Matchmaking": "🔍 Recherche de partie...",
+                    "ReadyCheck": "⚠️ Partie trouvée !",
+                    "ChampSelect": "⚔️ Sélection des champions",
+                    "InProgress": "🎮 Partie en cours",
+                    "EndOfGame": "🏁 Fin de partie",
+                    "WaitingForStats": "📊 En attente des stats",
+                    "PreEndOfGame": "💥 Nexus détruit",
+                    "None": "💤 Inactif"
+                }
+                friendly_phase = phase_map.get(phase, phase)
+                self.update_status(f"ℹ️ Statut : {friendly_phase}")
+                
                 if phase == "ChampSelect":
                     self._reset_between_games()
                     await self._champ_select_tick()
