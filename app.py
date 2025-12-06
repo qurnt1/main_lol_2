@@ -2,7 +2,7 @@
 MAIN LOL - Assistant pour League of Legends
 ------------------------------------------
 Auteur: Qurnt1
-Version: 5.4 (UI Friendly + Robust Logic)
+Version: 5.6
 """
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -33,6 +33,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from lcu_driver import Connector
 import asyncio
 import logging
+import requests # Nécessaire pour l'auto-update et le splash art
 
 # --- 1. CONFIGURATION DU LOGGING ---
 logging.basicConfig(
@@ -718,6 +719,9 @@ class SettingsWindow:
 
 class LoLAssistant:
     SUMMONER_SPELL_MAP = SUMMONER_SPELL_MAP
+    CURRENT_VERSION = "5.6" # VERSION LOCALE (Mets une version inférieure sur GitHub pour tester la popup)
+    GITHUB_REPO_URL = "https://github.com/qurnt1/main_lol_2"
+    RAW_README_URL = "https://raw.githubusercontent.com/qurnt1/main_lol_2/refs/heads/main/readme.md"
 
     def __init__(self):
         self.theme = DEFAULT_PARAMS["theme"]
@@ -792,6 +796,8 @@ class LoLAssistant:
         self.create_ui()
         self.create_system_tray()
         self.setup_hotkeys()
+
+        self.check_for_updates()
 
         if Connector is not None:
             self.ws_thread = Thread(target=self._ws_loop, daemon=True)
@@ -868,6 +874,11 @@ class LoLAssistant:
         garen_icon = ImageTk.PhotoImage(Image.open(resource_path("./config/imgs/garen.webp")).resize((32, 32)))
         self.root.iconphoto(False, garen_icon)
         banner_img = ImageTk.PhotoImage(Image.open(resource_path("./config/imgs/garen.webp")).resize((48, 48)))
+        # AJOUT : Label d'arrière-plan (Background)
+        self.bg_label = tk.Label(self.root, bg="#2b2b2b") # Gris foncé par défaut
+        self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+        # On le met tout en bas de la pile d'affichage
+        self.bg_label.lower()
         self.banner_label = ttk.Label(self.root, image=banner_img)
         self.banner_label.image = banner_img
         self.banner_label.place(relx=0.5, rely=0.08, anchor="n")
@@ -901,6 +912,71 @@ class LoLAssistant:
         opgg_btn.place(relx=0.5, rely=0.75, anchor="center")
 
         self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
+
+    def set_background_splash(self, champion_name):
+        """Met le Splash Art du champion en fond d'écran de l'app."""
+        def _task():
+            try:
+                # 1. Résolution du nom (DataDragon veut "MonkeyKing" pas "Wukong")
+                cid = self.dd.resolve_champion(champion_name)
+                if not cid: return
+                real_name = self.dd.by_id[cid].get("id", champion_name)
+
+                # 2. URL du Splash Art (Skin par défaut _0)
+                url = f"https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{real_name}_0.jpg"
+                
+                # 3. Téléchargement
+                response = requests.get(url, stream=True, timeout=5)
+                if response.status_code == 200:
+                    from io import BytesIO
+                    from PIL import Image, ImageEnhance
+
+                    img_data = BytesIO(response.content)
+                    pil_img = Image.open(img_data)
+
+                    # 4. Redimensionnement "Center Crop" pour ta fenêtre 380x180
+                    # On veut que l'image remplisse la fenêtre
+                    window_w, window_h = 380, 180
+                    
+                    # On redimensionne en gardant le ratio pour couvrir toute la largeur
+                    base_width = window_w
+                    w_percent = (base_width / float(pil_img.size[0]))
+                    h_size = int((float(pil_img.size[1]) * float(w_percent)))
+                    
+                    # Si l'image redimensionnée est moins haute que la fenêtre, on se base sur la hauteur
+                    if h_size < window_h:
+                        base_height = window_h
+                        h_percent = (base_height / float(pil_img.size[1]))
+                        w_size = int((float(pil_img.size[0]) * float(h_percent)))
+                        pil_img = pil_img.resize((w_size, base_height), Image.Resampling.LANCZOS)
+                    else:
+                        pil_img = pil_img.resize((base_width, h_size), Image.Resampling.LANCZOS)
+
+                    # Crop au centre
+                    left = (pil_img.width - window_w) / 2
+                    top = (pil_img.height - window_h) / 2
+                    right = (pil_img.width + window_w) / 2
+                    bottom = (pil_img.height + window_h) / 2
+                    pil_img = pil_img.crop((left, top, right, bottom))
+
+                    # 5. Assombrir l'image (pour la lisibilité du texte)
+                    enhancer = ImageEnhance.Brightness(pil_img)
+                    pil_img = enhancer.enhance(0.4) # 0.4 = très sombre (40% luminosité)
+
+                    # 6. Affichage (Mise à jour UI dans le thread principal)
+                    tk_img = ImageTk.PhotoImage(pil_img)
+                    
+                    def _update_ui():
+                        if self.root.winfo_exists():
+                            self.bg_label.configure(image=tk_img)
+                            self.bg_label.image = tk_img # Garder la référence !
+                    
+                    self.root.after(0, _update_ui)
+
+            except Exception as e:
+                print(f"Erreur Splash Art: {e}")
+
+        Thread(target=_task, daemon=True).start()
 
     def create_system_tray(self):
         try:
@@ -977,9 +1053,10 @@ class LoLAssistant:
 
     def update_status(self, message: str):
         now = datetime.now().strftime("%H:%M:%S")
-        text = f"[{now}] {message}"
-        self.root.after(0, lambda: self.status_label.config(text=text))
-        print(text, flush=True)
+        # Console : Avec heure
+        print(f"[{now}] {message}", flush=True)
+        # UI : Sans heure (Clean)
+        self.root.after(0, lambda: self.status_label.config(text=message))
 
     def update_connection_indicator(self, connected: bool):
         def _draw():
@@ -1192,6 +1269,10 @@ class LoLAssistant:
                     self.has_picked = True
                     # UI FRIENDLY
                     self.update_status(f"🔒 {name} sécurisé ! À toi de jouer.")
+                    
+                    # AJOUT ICI :
+                    self.set_background_splash(name)
+                    
                     asyncio.create_task(self._set_spells_and_runes(name))
                     return # C'est bon, on arrête tout, on a pick !
                 else:
@@ -1413,6 +1494,39 @@ class LoLAssistant:
         self.root.style.theme_use(new_theme)
         self.theme = new_theme
         self.save_parameters()
+
+    def check_for_updates(self):
+        """Vérifie la version sur GitHub en tâche de fond (Logique plus souple)."""
+        def _check():
+            print("[Update] Vérification des mises à jour...")
+            try:
+                r = requests.get(self.RAW_README_URL, timeout=5)
+                if r.status_code == 200:
+                    content = r.text
+                    
+                    # On cherche "v5.6" ou "version-v5.6" ou "(v5.6)"
+                    match = re.search(r"v(\d+\.\d+)", content)
+                    
+                    if match:
+                        remote_version = match.group(1)
+                        print(f"[Update] Version en ligne trouvée : {remote_version} (Locale : {self.CURRENT_VERSION})")
+                        
+                        if remote_version != self.CURRENT_VERSION:
+                            self.root.after(0, lambda: self._show_update_popup(remote_version))
+                    else:
+                        print("[Update] Impossible de trouver le numéro de version dans le README.")
+                else:
+                    print(f"[Update] Echec téléchargement README. Code: {r.status_code}")
+            except Exception as e:
+                print(f"[Update] Erreur vérification : {e}")
+
+        Thread(target=_check, daemon=True).start()
+
+    def _show_update_popup(self, new_version):
+        from tkinter import messagebox
+        msg = f"Une nouvelle version (v{new_version}) est disponible !\n\nVotre version : v{self.CURRENT_VERSION}\n\nVoulez-vous ouvrir la page de téléchargement ?"
+        if messagebox.askyesno("Mise à jour MAIN LOL", msg):
+            webbrowser.open(self.GITHUB_REPO_URL)
 
 if __name__ == "__main__":
     try:
