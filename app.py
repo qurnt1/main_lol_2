@@ -2,12 +2,12 @@
 MAIN LOL - Assistant pour League of Legends
 ------------------------------------------
 Auteur: Qurnt1
-Version: 5.6
+Version: 6.0 
 """
 
 # ───────────────────────────────────────────────────────────────────────────
 # IMPORTS & CONFIGURATION SYSTEME
-# ───────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
 
 import tkinter as tk
 from tkinter import ttk as ttk_widget
@@ -33,7 +33,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from lcu_driver import Connector
 import asyncio
 import logging
-import requests # Nécessaire pour l'auto-update et le splash art
+import requests
 
 # --- 1. CONFIGURATION DU LOGGING ---
 logging.basicConfig(
@@ -373,13 +373,15 @@ class SettingsWindow:
         frame.columnconfigure(0, weight=0) 
         frame.columnconfigure(1, weight=1) 
 
+        # --- MODIF : NETTOYAGE DES EMOJIS DANS L'UI ---
+
         # ROW 0
-        ttk.Checkbutton(frame, text="✅ Accepter la partie (Auto-Accept)", variable=self.auto_var,
+        ttk.Checkbutton(frame, text="Accepter la partie (Auto-Accept)", variable=self.auto_var,
                         command=lambda: setattr(self.parent, 'auto_accept_enabled', self.auto_var.get()),
                         bootstyle="success-round-toggle").grid(row=0, column=0, columnspan=2, sticky="w", pady=5)
 
         # ROW 1 (Auto Pick)
-        ttk.Checkbutton(frame, text="👑 Sécuriser mon Champion (Auto-Pick)", variable=self.pick_var,
+        ttk.Checkbutton(frame, text="Sécuriser mon Champion (Auto-Pick)", variable=self.pick_var,
                         command=lambda: (setattr(self.parent, 'auto_pick_enabled', self.pick_var.get()), self.toggle_pick()),
                         bootstyle="info-round-toggle").grid(row=1, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
@@ -400,7 +402,7 @@ class SettingsWindow:
         self.btn_pick_3.configure(command=lambda: self._open_champion_picker("pick", 3))
 
         # ROW 5 (Auto Ban)
-        ttk.Checkbutton(frame, text="🚫 Bannir un Champion (Auto-Ban)", variable=self.ban_var,
+        ttk.Checkbutton(frame, text="Bannir un Champion (Auto-Ban)", variable=self.ban_var,
                         command=lambda: (setattr(self.parent, 'auto_ban_enabled', self.ban_var.get()), self.toggle_ban()),
                         bootstyle="danger-round-toggle").grid(row=5, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
@@ -411,7 +413,7 @@ class SettingsWindow:
         self.btn_ban.configure(command=lambda: self._open_champion_picker("ban"))
 
         # ROW 7 (Auto Summoners)
-        ttk.Checkbutton(frame, text="🪄 Configurer Sorts (Auto-Spells)", variable=self.summ_var,
+        ttk.Checkbutton(frame, text="Configurer Sorts (Auto-Spells)", variable=self.summ_var,
                         command=lambda: (setattr(self.parent, 'auto_summoners_enabled', self.summ_var.get()), self.toggle_spells()),
                         bootstyle="warning-round-toggle").grid(row=7, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
@@ -427,15 +429,14 @@ class SettingsWindow:
         self.btn_spell_2.configure(command=lambda: self._open_spell_picker(2))
 
         # ROW 10 (Runes)
-        ttk.Checkbutton(frame, text="🔮 Importer les Runes Meta (Auto-Runes)", variable=self.meta_runes_var,
+        ttk.Checkbutton(frame, text="Importer les Runes Meta (Auto-Runes)", variable=self.meta_runes_var,
                         command=lambda: setattr(self.parent, 'auto_meta_runes_enabled', self.meta_runes_var.get()),
                         bootstyle="primary-round-toggle").grid(row=10, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        # --- ROW 11 : Détection Auto (Design demandé : Bouton à gauche, Label à côté) ---
+        # --- ROW 11 : Détection Auto ---
         detect_frame = ttk.Frame(frame)
         detect_frame.grid(row=11, column=0, columnspan=2, sticky="w", pady=(15, 5))
         
-        # Le bouton Switch avec la logique de bascule et refresh
         def on_auto_toggle():
             self.toggle_summoner_entry()
             if self.summ_auto_var.get():
@@ -472,15 +473,15 @@ class SettingsWindow:
         misc_frame = ttk.Frame(frame)
         misc_frame.grid(row=15, column=0, columnspan=2, sticky="w")
         
-        ttk.Checkbutton(misc_frame, text="♻️ Rejouer automatiquement (Skip Honor)", variable=self.play_again_var,
+        ttk.Checkbutton(misc_frame, text="Rejouer automatiquement (Skip Honor)", variable=self.play_again_var,
                         command=lambda: setattr(self.parent, 'auto_play_again_enabled', self.play_again_var.get()),
                         bootstyle="info-round-toggle").pack(anchor="w", pady=2)
         
-        ttk.Checkbutton(misc_frame, text="🙈 Masquer l'app quand LoL se lance", variable=self.auto_hide_var,
+        ttk.Checkbutton(misc_frame, text="Masquer l'app quand LoL se lance", variable=self.auto_hide_var,
                         command=lambda: setattr(self.parent, 'auto_hide_on_connect', self.auto_hide_var.get()),
                         bootstyle="secondary-round-toggle").pack(anchor="w", pady=2)
         
-        ttk.Checkbutton(misc_frame, text="❌ Fermer l'app quand LoL se ferme", variable=self.close_on_exit_var,
+        ttk.Checkbutton(misc_frame, text="Fermer l'app quand LoL se ferme", variable=self.close_on_exit_var,
                         command=lambda: setattr(self.parent, 'close_app_on_lol_exit', self.close_on_exit_var.get()),
                         bootstyle="danger-round-toggle").pack(anchor="w", pady=2)
 
@@ -719,7 +720,7 @@ class SettingsWindow:
 
 class LoLAssistant:
     SUMMONER_SPELL_MAP = SUMMONER_SPELL_MAP
-    CURRENT_VERSION = "5.6" # VERSION LOCALE (Mets une version inférieure sur GitHub pour tester la popup)
+    CURRENT_VERSION = "6.0" 
     GITHUB_REPO_URL = "https://github.com/qurnt1/main_lol_2"
     RAW_README_URL = "https://raw.githubusercontent.com/qurnt1/main_lol_2/refs/heads/main/readme.md"
 
@@ -871,44 +872,66 @@ class LoLAssistant:
                 asyncio.run_coroutine_threadsafe(self._refresh_player_and_region(), self.loop)
 
     def create_ui(self):
+        # Configuration globale du Style pour forcer la police Emojis partout
+        style = ttk.Style()
+        # On force la police "Segoe UI Emoji" sur tous les widgets par défaut
+        style.configure(".", font=("Segoe UI Emoji", 10))
+        # On crée un style spécifique plus grand pour le statut
+        style.configure("Status.TLabel", font=("Segoe UI Emoji", 11), background=self.root['bg'])
+        
+        # --- Chargement des images ---
         garen_icon = ImageTk.PhotoImage(Image.open(resource_path("./config/imgs/garen.webp")).resize((32, 32)))
         self.root.iconphoto(False, garen_icon)
         banner_img = ImageTk.PhotoImage(Image.open(resource_path("./config/imgs/garen.webp")).resize((48, 48)))
-        # AJOUT : Label d'arrière-plan (Background)
-        self.bg_label = tk.Label(self.root, bg="#2b2b2b") # Gris foncé par défaut
+        
+        # Label d'arrière-plan (Background)
+        self.bg_label = tk.Label(self.root, bg="#2b2b2b")
         self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-        # On le met tout en bas de la pile d'affichage
         self.bg_label.lower()
+        
+        # Bannière Garen
         self.banner_label = ttk.Label(self.root, image=banner_img)
         self.banner_label.image = banner_img
         self.banner_label.place(relx=0.5, rely=0.08, anchor="n")
 
-        style = ttk.Style()
-        style.configure("Status.TLabel", font=("Segoe UI", 12))
-
-        self.connection_indicator = tk.Canvas(self.root, width=12, height=12, bd=0, highlightthickness=0, bg=self.root['bg'])
+        # Indicateur de connexion (le petit point vert/rouge)
+        self.connection_indicator = tk.Canvas(self.root, width=12, height=12, bd=0, highlightthickness=0, bg="#2b2b2b")
         self.connection_indicator.place(relx=0.05, rely=0.05, anchor="nw")
         self.update_connection_indicator(False)
 
-        # UI FRIENDLY : Message d'accueil plus clair
-        self.status_label = ttk.Label(self.root, text="💤 En attente du lancement de League of Legends...", style="Status.TLabel", justify="center", wraplength=380)
+        # UI CLEAN : Message d'accueil sans émoji
+        self.status_label = ttk.Label(
+            self.root, 
+            text="En attente du lancement de League of Legends...", 
+            style="Status.TLabel", 
+            justify="center", 
+            wraplength=380
+        )
         self.status_label.place(relx=0.5, rely=0.38, anchor="center")
 
-        gear_img = ImageTk.PhotoImage(Image.open(resource_path("./config/imgs/gear.png")).resize((25, 30)))
-        bg_color = self.root['bg']
-        cog = tk.Canvas(self.root, width=30, height=30, bd=0, highlightthickness=0, bg=bg_color, cursor="hand2")
-        cog.create_image(0, 0, anchor="nw", image=gear_img)
-        cog.image = gear_img
-        cog.place(relx=0.95, rely=0.05, anchor="ne")
+        # Bouton Engrenage (Settings)
+        gear_path = resource_path("./config/imgs/gear.png")
+        if os.path.exists(gear_path):
+            gear_img = ImageTk.PhotoImage(Image.open(gear_path).resize((25, 30)))
+            # On utilise un Label au lieu d'un Canvas pour mieux gérer la transparence si besoin
+            cog = ttk.Label(self.root, image=gear_img, cursor="hand2")
+            cog.image = gear_img
+            cog.place(relx=0.95, rely=0.05, anchor="ne")
+            cog.bind("<Button-1>", lambda e: self.open_settings())
+        else:
+            # Fallback si l'image gear n'existe pas
+            cog = ttk.Button(self.root, text="⚙", command=self.open_settings, bootstyle="link")
+            cog.place(relx=0.95, rely=0.05, anchor="ne")
 
-        def on_enter(e): cog.configure(bg="#2c2c2c")
-        def on_leave(e): cog.configure(bg=bg_color)
-        cog.bind("<Enter>", on_enter)
-        cog.bind("<Leave>", on_leave)
-        cog.bind("<Button-1>", lambda e: self.open_settings())
-
-        # UI FRIENDLY : Texte bouton
-        opgg_btn = ttk.Button(self.root, text="🔎 Voir mes stats (OP.GG)", bootstyle="success-outline", padding=(20, 10), width=22, command=lambda: webbrowser.open(self.build_opgg_url()))
+        # UI FRIENDLY : Bouton OP.GG avec style arrondi ("outline" fait plus moderne)
+        opgg_btn = ttk.Button(
+            self.root, 
+            text="Voir mes stats (OP.GG)", 
+            bootstyle="success-outline", # Style moderne
+            padding=(20, 10), 
+            width=22, 
+            command=lambda: webbrowser.open(self.build_opgg_url())
+        )
         opgg_btn.place(relx=0.5, rely=0.75, anchor="center")
 
         self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
@@ -1051,11 +1074,14 @@ class LoLAssistant:
         self.root.quit()
         remove_lockfile()
 
-    def update_status(self, message: str):
+    def update_status(self, message: str, emoji: str = ""):
         now = datetime.now().strftime("%H:%M:%S")
-        # Console : Avec heure
-        print(f"[{now}] {message}", flush=True)
-        # UI : Sans heure (Clean)
+        
+        # LOG CONSOLE : AVEC EMOJI
+        log_msg = f"[{now}] {emoji} {message}" if emoji else f"[{now}] {message}"
+        print(log_msg, flush=True)
+        
+        # LOG UI : SANS EMOJI (CLEAN)
         self.root.after(0, lambda: self.status_label.config(text=message))
 
     def update_connection_indicator(self, connected: bool):
@@ -1104,7 +1130,7 @@ class LoLAssistant:
         
         # --- ANTI-SPAM LOG ---
         if self.summoner != self.last_reported_summoner:
-            self.update_status(f"👤 Connecté : {self._riot_id_display_string()}")
+            self.update_status(f"Connecté : {self._riot_id_display_string()}", "👤")
             self.last_reported_summoner = self.summoner
 
         reg = None
@@ -1129,8 +1155,8 @@ class LoLAssistant:
     def _notify_game_start_once(self):
         now = time()
         if now - self.last_game_start_notify_ts >= self.game_start_cooldown:
-            self.show_toast("🎯 Game Start !")
-            self.update_status("🎯 Game Start détecté")
+            self.show_toast("Game Start !")
+            self.update_status("Game Start détecté", "🎯")
             self.last_game_start_notify_ts = now
 
     def _reset_between_games(self):
@@ -1178,7 +1204,7 @@ class LoLAssistant:
                 pos = (my_player_obj.get("assignedPosition") or "").upper()
                 if pos:
                     self.assigned_position = pos
-                    self.update_status(f"ℹ️ Rôle assigné détecté : {pos}")
+                    self.update_status(f"Rôle assigné détecté : {pos}", "ℹ️")
 
         actions_groups = session.get("actions", [])
         my_actions = []
@@ -1229,8 +1255,8 @@ class LoLAssistant:
         success = await self._lock_in_champion(action["id"], cid)
         if success:
             self.has_banned = True
-            # UI FRIENDLY
-            self.update_status(f"💀 Ciao ! {self.selected_ban} a été banni.")
+            # CLEAN UI + EMOJI CONSOLE
+            self.update_status(f"Ciao ! {self.selected_ban} a été banni.", "💀")
 
     async def _logic_do_pick(self, action):
         """
@@ -1267,8 +1293,8 @@ class LoLAssistant:
                 success = await self._lock_in_champion(action["id"], cid)
                 if success:
                     self.has_picked = True
-                    # UI FRIENDLY
-                    self.update_status(f"🔒 {name} sécurisé ! À toi de jouer.")
+                    # CLEAN UI + EMOJI CONSOLE
+                    self.update_status(f"{name} sécurisé ! À toi de jouer.", "🔒")
                     
                     # AJOUT ICI :
                     self.set_background_splash(name)
@@ -1281,7 +1307,7 @@ class LoLAssistant:
                     pass
         
         # Si on sort de la boucle sans return, c'est qu'on a tout raté
-        self.update_status("⚠️ Aucun champion dispo ou configuré (ou tous bannis) !")
+        self.update_status("Aucun champion dispo ou configuré (ou tous bannis) !", "⚠️")
 
     async def _lock_in_champion(self, action_id, champion_id):
         """
@@ -1321,7 +1347,7 @@ class LoLAssistant:
         spell2_id = self.SUMMONER_SPELL_MAP.get(spell2_name, 4)
         payload = {"spell1Id": spell1_id, "spell2Id": spell2_id}
         r = await self.connection.request('patch', "/lol-champ-select/v1/session/my-selection", json=payload)
-        if r and r.status < 400: self.update_status(f"🪄 Sorts auto-sélectionnés ({spell1_name}, {spell2_name})")
+        if r and r.status < 400: self.update_status(f"Sorts auto-sélectionnés ({spell1_name}, {spell2_name})", "🪄")
 
     async def _set_runes(self, champion_name: str):
         if not self.connection: return
@@ -1333,7 +1359,7 @@ class LoLAssistant:
         if position == "SUPPORT": position = "UTILITY"
         if not position: return
 
-        self.update_status(f"🔮 Runes : Recherche page Riot pour {champion_name} ({position})...")
+        self.update_status(f"Runes : Recherche page Riot pour {champion_name} ({position})...", "🔮")
         try:
             r = await self.connection.request('get', f"/lol-perks/v1/recommended-pages/champion/{champ_id}/position/{position}")
             if r.status != 200: return
@@ -1373,8 +1399,8 @@ class LoLAssistant:
 
             if final_id:
                 await self.connection.request('put', "/lol-perks/v1/currentpage", data=str(final_id))
-                # UI FRIENDLY
-                self.update_status(f"✨ Runes importées pour {champion_name} (Mode Tryhard)")
+                # UI CLEAN + EMOJI CONSOLE
+                self.update_status(f"Runes importées pour {champion_name} (Mode Tryhard)", "✨")
         except Exception as e:
             print(f"[Runes] Erreur application runes : {e}")
 
@@ -1385,7 +1411,7 @@ class LoLAssistant:
             if self.current_phase not in ["EndOfGame", "WaitingForStats"]: break
             r = await self.connection.request('post', "/lol-lobby/v2/play-again")
             if r and r.status < 400:
-                self.update_status("✅ Rejouer auto réussi !")
+                self.update_status("Rejouer auto réussi !", "✅")
                 break
 
     def _ws_loop(self):
@@ -1401,8 +1427,8 @@ class LoLAssistant:
                 self.connection = connection
                 self.ws_active = True
                 self.update_connection_indicator(True)
-                # UI FRIENDLY
-                self.update_status("⚡ Client LoL détecté ! Prêt à vous aider.")
+                # CLEAN UI + EMOJI CONSOLE
+                self.update_status("Client LoL détecté ! Prêt à vous aider.", "⚡")
                 logging.info("WebSocket: Connecté au client LCU.")
                 await self._refresh_player_and_region()
                 if self.auto_hide_on_connect: self.root.after(3000, self.hide_window)
@@ -1412,8 +1438,8 @@ class LoLAssistant:
                 self.connection = None
                 self.ws_active = False
                 self.update_connection_indicator(False)
-                # UI FRIENDLY
-                self.update_status("💤 LoL fermé. En attente...")
+                # CLEAN UI + EMOJI CONSOLE
+                self.update_status("LoL fermé. En attente...", "💤")
                 self.last_reported_summoner = None 
                 logging.info("WebSocket: Déconnecté.")
                 if self.close_app_on_lol_exit: self.root.after(100, self.quit_app)
@@ -1431,7 +1457,7 @@ class LoLAssistant:
             async def _ws_login_session(connection, event):
                 data = event.data or {}
                 if data.get('status') == "SUCCEEDED":
-                    self.update_status("🔄 Login détecté...")
+                    self.update_status("Login détecté...", "🔄")
                     await self._refresh_player_and_region()
 
             @connector.ws.register(EP_GAMEFLOW)
@@ -1442,20 +1468,20 @@ class LoLAssistant:
                     logging.info(f"Phase changée : {self.current_phase} -> {phase}")
                 self.current_phase = phase
                 
-                # UI FRIENDLY : Traduction des phases
+                # CLEAN UI : Traduction des phases sans Emojis dans la valeur, ajoutés via update_status
                 phase_map = {
-                    "Lobby": "🏠 Au Salon (Lobby)",
-                    "Matchmaking": "🔍 Recherche de partie...",
-                    "ReadyCheck": "⚠️ Partie trouvée !",
-                    "ChampSelect": "⚔️ Sélection des champions",
-                    "InProgress": "🎮 Partie en cours",
-                    "EndOfGame": "🏁 Fin de partie",
-                    "WaitingForStats": "📊 En attente des stats",
-                    "PreEndOfGame": "💥 Nexus détruit",
-                    "None": "💤 Inactif"
+                    "Lobby": "Au Salon (Lobby)",
+                    "Matchmaking": "Recherche de partie...",
+                    "ReadyCheck": "Partie trouvée !",
+                    "ChampSelect": "Sélection des champions",
+                    "InProgress": "Partie en cours",
+                    "EndOfGame": "Fin de partie",
+                    "WaitingForStats": "En attente des stats",
+                    "PreEndOfGame": "Nexus détruit",
+                    "None": "Inactif"
                 }
                 friendly_phase = phase_map.get(phase, phase)
-                self.update_status(f"ℹ️ Statut : {friendly_phase}")
+                self.update_status(f"Statut : {friendly_phase}", "ℹ️")
                 
                 if phase == "ChampSelect":
                     self._reset_between_games()
@@ -1469,7 +1495,7 @@ class LoLAssistant:
                 data = event.data or {}
                 if self.auto_accept_enabled and data.get('state') == 'InProgress' and data.get('playerResponse') != 'Accepted':
                     await connection.request('post', f'{EP_READY_CHECK}/accept')
-                    self.update_status("✅ Partie acceptée !")
+                    self.update_status("Partie acceptée !", "✅")
 
             @connector.ws.register(EP_SESSION)
             async def _ws_cs_session(connection, event):
@@ -1496,15 +1522,13 @@ class LoLAssistant:
         self.save_parameters()
 
     def check_for_updates(self):
-        """Vérifie la version sur GitHub en tâche de fond (Logique plus souple)."""
+        """Vérifie la version sur GitHub en tâche de fond."""
         def _check():
             print("[Update] Vérification des mises à jour...")
             try:
                 r = requests.get(self.RAW_README_URL, timeout=5)
                 if r.status_code == 200:
                     content = r.text
-                    
-                    # On cherche "v5.6" ou "version-v5.6" ou "(v5.6)"
                     match = re.search(r"v(\d+\.\d+)", content)
                     
                     if match:
@@ -1523,10 +1547,65 @@ class LoLAssistant:
         Thread(target=_check, daemon=True).start()
 
     def _show_update_popup(self, new_version):
-        from tkinter import messagebox
-        msg = f"Une nouvelle version (v{new_version}) est disponible !\n\nVotre version : v{self.CURRENT_VERSION}\n\nVoulez-vous ouvrir la page de téléchargement ?"
-        if messagebox.askyesno("Mise à jour MAIN LOL", msg):
+        # On crée une fenêtre personnalisée pour avoir l'icône
+        popup = ttk.Toplevel(self.root)
+        popup.title("Mise à jour MAIN LOL")
+        popup.geometry("400x250")
+        popup.resizable(False, False)
+        
+        # Centrer la popup
+        popup.update_idletasks()
+        width = popup.winfo_width()
+        height = popup.winfo_height()
+        x = (popup.winfo_screenwidth() // 2) - (width // 2)
+        y = (popup.winfo_screenheight() // 2) - (height // 2)
+        popup.geometry(f'{width}x{height}+{x}+{y}')
+
+        # 1. Gestion de l'icône
+        try:
+            icon_path = resource_path("./config/imgs/garen.webp")
+            if os.path.exists(icon_path):
+                img = Image.open(icon_path).resize((32, 32))
+                photo = ImageTk.PhotoImage(img)
+                popup.iconphoto(False, photo)
+                popup.iconphoto(True, photo) 
+                popup._icon_ref = photo 
+        except: pass
+
+        # 2. Design "Moderne"
+        title_lbl = ttk.Label(
+            popup, 
+            text="Nouvelle version détectée !", 
+            font=("Segoe UI Emoji", 14, "bold"),
+            bootstyle="inverse-primary"
+        )
+        title_lbl.pack(fill="x", pady=(0, 15), ipady=10)
+        
+        info_frame = ttk.Frame(popup, padding=10)
+        info_frame.pack(fill="both", expand=True)
+
+        info_text = f"Une mise à jour est disponible sur GitHub.\n\nVersion actuelle : {self.CURRENT_VERSION}\nNouvelle version : {new_version}"
+        ttk.Label(info_frame, text=info_text, justify="center", font=("Segoe UI", 11)).pack(pady=5)
+
+        # Boutons
+        btn_frame = ttk.Frame(popup, padding=(0, 0, 0, 20))
+        btn_frame.pack(fill="x")
+
+        def on_download():
             webbrowser.open(self.GITHUB_REPO_URL)
+            popup.destroy()
+
+        # CORRECTION ICI : On retire "-round" qui fait planter ton script
+        # On garde "success" tout court (ou "success-outline" si tu préfères les contours)
+        btn_yes = ttk.Button(btn_frame, text="Télécharger", bootstyle="success", command=on_download, width=15)
+        btn_yes.pack(side="left", padx=(40, 10), expand=True)
+
+        # CORRECTION ICI : Idem pour secondary
+        btn_no = ttk.Button(btn_frame, text="Plus tard", bootstyle="secondary", command=popup.destroy, width=15)
+        btn_no.pack(side="right", padx=(10, 40), expand=True)
+        
+        popup.attributes('-topmost', True)
+        popup.focus_force()
 
 if __name__ == "__main__":
     try:

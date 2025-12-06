@@ -1,6 +1,6 @@
-# 🛡️ MAIN LOL - Assistant pour League of Legends (v5.0)
+# 🛡️ MAIN LOL - Assistant pour League of Legends (v6.0)
 
-![Version](https://img.shields.io/badge/version-v5.0-blue.svg)
+![Version](https://img.shields.io/badge/version-v6.0-blue.svg)
 ![Python](https://img.shields.io/badge/Python-3.13-green.svg)
 ![UI](https://img.shields.io/badge/UI-ttkbootstrap-purple.svg)
 
