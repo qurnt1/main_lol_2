@@ -6,20 +6,13 @@
 
 Un assistant de bureau moderne pour League of Legends qui automatise la phase de sélection (Champ Select), gère vos runes et améliore votre expérience de jeu.
 
-## ✨ Nouveautés de la v5.0
-
-* 🖼️ **Sélecteurs Visuels :** Fini les listes textuelles ! Choisissez vos champions et sorts via une interface visuelle fluide avec recherche intégrée.
-* ⚡ **Runes Natives (LCU) :** L'application injecte désormais directement les pages recommandées par Riot (plus rapide et fiable que les sites tiers).
-* 🔊 **Smart Audio :** Gestion intelligente du son (plus de spam sonore au lancement ou à l'acceptation).
-* 🛑 **Logique Anti-Doublon :** Impossible de sélectionner le même champion sur plusieurs slots (Pick/Ban).
-
 ## 🚀 Fonctionnalités Principales
 
-* **Auto-Accept :** Accepte la partie instantanément (avec un unique son de confirmation).
+* **Auto-Accept :** Accepte la partie instantanément (avec un son de confirmation).
 * **Auto-Pick (Priorité) :** Tente de sécuriser vos champions par ordre de priorité (P1 > P2 > P3).
-* **Auto-Ban :** Bannit automatiquement votre "Némésis" (avec exclusion automatique des picks).
+* **Auto-Ban :** Bannit automatiquement votre "Némésis".
 * **Auto-Spells :** Assigne vos sorts d'invocateur favoris à chaque partie.
-* **Auto-Replay :** Clique automatiquement sur "Rejouer" à la fin de la partie (skip des stats).
+* **Auto-Replay :** Retour automatique au menu à la fin de la partie (skip des stats).
 * **Mode Discret :** L'application se masque automatiquement dans le systray quand le jeu est détecté.
 * **Liens Rapides :** Accès direct à OP.GG ou Porofessor avec détection automatique de votre compte actif.
 

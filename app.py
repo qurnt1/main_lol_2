@@ -2,7 +2,7 @@
 MAIN LOL - Assistant pour League of Legends
 ------------------------------------------
 Auteur: Qurnt1
-Version: 6.0 
+Version: 6.4 (Debug PICK & RUNES)
 """
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -34,6 +34,7 @@ from lcu_driver import Connector
 import asyncio
 import logging
 import requests
+from io import BytesIO
 
 # --- 1. CONFIGURATION DU LOGGING ---
 logging.basicConfig(
@@ -69,6 +70,8 @@ EP_PICKABLE = "/lol-champ-select/v1/pickable-champion-ids"
 EP_CURRENT_SUMMONER = "/lol-summoner/v1/current-summoner"
 EP_CHAT_ME = "/lol-chat/v1/me"
 EP_LOGIN = "/lol-login/v1/session"
+EP_PERKS_PAGES = "/lol-perks/v1/pages"
+EP_PERKS_CURRENT = "/lol-perks/v1/currentpage"
 
 # ───────────────────────────────────────────────────────────────────────────
 # UTILITAIRES
@@ -112,6 +115,7 @@ DEFAULT_PARAMS = {
     "auto_play_again_enabled": False,
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
+    "champion_rune_map": {},  # {"ChampionName": PageID}
 }
 
 REGION_LIST = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
@@ -146,6 +150,8 @@ check_single_instance()
 
 class DataDragon:
     URL_VERSIONS = "https://ddragon.leagueoflegends.com/api/versions.json"
+    URL_DD_RUNES = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/runesReforged.json"
+    URL_IMG_RUNE = "https://ddragon.leagueoflegends.com/cdn/img/{path}"
     CACHE_FILE = os.path.join(tempfile.gettempdir(), "mainlol_ddragon_champions.json")
 
     def __init__(self):
@@ -157,6 +163,11 @@ class DataDragon:
         self.all_names: List[str] = []
         self.summoner_data = {} 
         self.summoner_loaded = False
+        
+        # Runes
+        self.runes_data = []
+        self.runes_loaded = False
+        self.perk_icon_map = {} # ID -> Path
 
     @staticmethod
     def _normalize(s: str) -> str:
@@ -262,8 +273,6 @@ class DataDragon:
             except: pass
         url = URL_DD_IMG_CHAMP.format(version=self.version, filename=image_filename)
         try:
-            import requests
-            from io import BytesIO
             r = requests.get(url, timeout=5)
             if r.status_code == 200:
                 img = Image.open(BytesIO(r.content))
@@ -289,7 +298,6 @@ class DataDragon:
         if not self.version: self.load() 
         url = URL_DD_SUMMONERS.format(version=self.version)
         try:
-            import requests
             r = requests.get(url, timeout=5)
             if r.status_code == 200:
                 data = r.json().get("data", {})
@@ -314,8 +322,6 @@ class DataDragon:
             except: pass
         url = URL_DD_IMG_SPELL.format(version=self.version, filename=image_filename)
         try:
-            import requests
-            from io import BytesIO
             r = requests.get(url, timeout=5)
             if r.status_code == 200:
                 img = Image.open(BytesIO(r.content))
@@ -323,6 +329,184 @@ class DataDragon:
                 return img
         except: pass
         return None
+
+    def load_runes(self):
+        if self.runes_loaded: return
+        if not self.version: self.load()
+        try:
+            r = requests.get(self.URL_DD_RUNES.format(version=self.version), timeout=5)
+            if r.status_code == 200:
+                self.runes_data = r.json()
+                for tree in self.runes_data:
+                    for slot in tree.get('slots', []):
+                        for rune in slot.get('runes', []):
+                            self.perk_icon_map[rune['id']] = rune['icon']
+                    self.perk_icon_map[tree['id']] = tree['icon']
+                self.runes_loaded = True
+        except: pass
+
+    def get_rune_icon(self, perk_id: int) -> Optional[Image.Image]:
+        self.load_runes()
+        icon_path = self.perk_icon_map.get(perk_id)
+        
+        if not icon_path:
+             shards = {
+                 5001: "perk-images/StatMods/StatModsHealthScalingIcon.png",
+                 5002: "perk-images/StatMods/StatModsArmorIcon.png",
+                 5003: "perk-images/StatMods/StatModsMagicResIcon.png",
+                 5005: "perk-images/StatMods/StatModsAttackSpeedIcon.png",
+                 5007: "perk-images/StatMods/StatModsCDRScalingIcon.png",
+                 5008: "perk-images/StatMods/StatModsAdaptiveForceIcon.png"
+             }
+             icon_path = shards.get(perk_id)
+
+        if not icon_path: return None
+        
+        filename = icon_path.split('/')[-1]
+        cache_dir = os.path.join(tempfile.gettempdir(), "mainlol_runes")
+        os.makedirs(cache_dir, exist_ok=True)
+        local_path = os.path.join(cache_dir, filename)
+
+        if os.path.exists(local_path):
+            try: return Image.open(local_path)
+            except: pass
+
+        url = self.URL_IMG_RUNE.format(path=icon_path)
+        try:
+            r = requests.get(url, timeout=5)
+            if r.status_code == 200:
+                with open(local_path, "wb") as f: f.write(r.content)
+                return Image.open(BytesIO(r.content))
+        except: pass
+        return None
+
+# ───────────────────────────────────────────────────────────────────────────
+# WINDOW: RUNE CONFIG
+# ───────────────────────────────────────────────────────────────────────────
+
+class RuneConfigWindow:
+    def __init__(self, parent, champion_name):
+        self.parent = parent
+        self.app = parent.parent 
+        self.champion_name = champion_name
+        self.window = ttk.Toplevel(parent.window)
+        self.window.title(f"Runes pour {champion_name}")
+        self.window.geometry("500x600")
+        
+        img = Image.open(resource_path("./config/imgs/garen.webp")).resize((16, 16))
+        photo = ImageTk.PhotoImage(img)
+        self.window.iconphoto(False, photo)
+        self.window._icon_img = photo
+        
+        ttk.Label(self.window, text=f"Choisir une page pour {champion_name}", font=("Segoe UI", 12, "bold")).pack(pady=10)
+        
+        self.list_frame = ttk.Frame(self.window)
+        self.list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        self.status_lbl = ttk.Label(self.window, text="Chargement des pages...", bootstyle="info")
+        self.status_lbl.pack(pady=5)
+
+        Thread(target=self._fetch_pages_thread, daemon=True).start()
+
+    def _fetch_pages_thread(self):
+        if not self.app.ws_active:
+            self.window.after(0, lambda: self.status_lbl.configure(text="Erreur: LoL non connecté", bootstyle="danger"))
+            return
+
+        async def get_pages():
+            res = await self.app.connection.request('get', EP_PERKS_PAGES)
+            if res.status == 200: return await res.json()
+            return []
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(get_pages(), self.app.loop)
+            pages = future.result(timeout=5)
+            self.window.after(0, lambda: self._populate_list(pages))
+        except:
+            self.window.after(0, lambda: self.status_lbl.configure(text="Erreur récupération pages", bootstyle="danger"))
+
+    def _populate_list(self, pages):
+        self.status_lbl.configure(text="Sélectionnez une page :", bootstyle="secondary")
+        
+        canvas = tk.Canvas(self.list_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.list_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Lecture dans l'app principale
+        current_map_id = self.app.champion_rune_map.get(self.champion_name)
+        print(f"[RuneWindow] Ouverture pour {self.champion_name}. ID actuel en mémoire: {current_map_id}")
+
+        # Ajout option "Aucune"
+        f_none = ttk.Frame(scrollable_frame)
+        f_none.pack(fill="x", pady=2, padx=5)
+        ttk.Button(f_none, text=" (Désactiver les runes auto pour ce champion)", bootstyle="secondary-link",
+                   command=lambda: self._save_selection(None, "Désactivé")).pack(anchor="w", fill="x")
+
+        for page in pages:
+            pid = page['id']
+            name = page['name']
+            is_selected = (current_map_id == pid)
+            all_perks = page.get('selectedPerkIds', [])
+
+            frame_item = ttk.Frame(scrollable_frame, bootstyle="secondary" if not is_selected else "success")
+            frame_item.pack(fill="x", pady=4, padx=5)
+
+            btn = ttk.Button(frame_item, text=f" {name}", bootstyle="link", 
+                             command=lambda i=pid, n=name: self._save_selection(i, n))
+            btn.pack(anchor="w", fill="x", padx=5, pady=(5, 0))
+            
+            icon_frame = ttk.Frame(frame_item)
+            icon_frame.pack(anchor="w", padx=15, pady=(0, 5))
+            self._load_all_runes_imgs(icon_frame, all_perks)
+
+    def _load_all_runes_imgs(self, container, perk_ids):
+        def task():
+            images = []
+            for perk_id in perk_ids:
+                img = self.app.dd.get_rune_icon(perk_id)
+                if img:
+                    img = img.resize((24, 24), Image.LANCZOS)
+                    images.append(ImageTk.PhotoImage(img))
+                else:
+                    images.append(None)
+            def ui():
+                if not container.winfo_exists(): return
+                for photo in images:
+                    if photo:
+                        lbl = ttk.Label(container, image=photo)
+                        lbl.image = photo
+                        lbl.pack(side="left", padx=1)
+            self.window.after(0, ui)
+        Thread(target=task, daemon=True).start()
+
+    def _save_selection(self, page_id, page_name):
+        print(f"\n[RuneWindow] --- SAUVEGARDE DEMANDEE ---")
+        print(f"[RuneWindow] Champion: {self.champion_name}")
+        print(f"[RuneWindow] Page Name: {page_name}")
+        print(f"[RuneWindow] Page ID (brut): {page_id} (Type: {type(page_id)})")
+
+        if page_id:
+            # Force conversion to int
+            self.app.champion_rune_map[self.champion_name] = int(page_id)
+            print(f"[RuneWindow] -> Assignation: {self.champion_name} = {int(page_id)}")
+        else:
+            if self.champion_name in self.app.champion_rune_map:
+                del self.app.champion_rune_map[self.champion_name]
+            print(f"[RuneWindow] -> Suppression de la config pour {self.champion_name}")
+        
+        print(f"[RuneWindow] Etat de la MAP mémoire APRES modif: {self.app.champion_rune_map}")
+        
+        self.app.save_parameters()
+        self.window.destroy()
+        self.app.show_toast(f"Page '{page_name}' associée à {self.champion_name} !")
+
 
 # ───────────────────────────────────────────────────────────────────────────
 # SETTINGS WINDOW
@@ -333,7 +517,7 @@ class SettingsWindow:
         self.parent = parent
         self.window = ttk.Toplevel(parent.root)
         self.window.title("Paramètres - MAIN LOL")
-        self.window.geometry("500x750") 
+        self.window.geometry("500x800") 
         self.window.resizable(False, False)
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -381,21 +565,45 @@ class SettingsWindow:
                         command=lambda: (setattr(self.parent, 'auto_pick_enabled', self.pick_var.get()), self.toggle_pick()),
                         bootstyle="info-round-toggle").grid(row=1, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        # ROW 2-4 (Picks)
+        # ROW 2 (Pick 1 + Rune Btn)
         ttk.Label(frame, text="Pick 1 :").grid(row=2, column=0, sticky="e", padx=5, pady=3)
-        self.btn_pick_1 = ttk.Button(frame, text=self.parent.selected_pick_1, bootstyle="secondary-outline")
-        self.btn_pick_1.grid(row=2, column=1, sticky="ew", padx=5, pady=3)
+        self.container_pick_1 = ttk.Frame(frame)
+        self.container_pick_1.grid(row=2, column=1, sticky="ew", padx=5, pady=3)
+        
+        self.btn_pick_1 = ttk.Button(self.container_pick_1, text=self.parent.selected_pick_1, bootstyle="secondary-outline")
+        self.btn_pick_1.pack(side="left", fill="x", expand=True)
         self.btn_pick_1.configure(command=lambda: self._open_champion_picker("pick", 1))
 
+        self.btn_rune_1 = ttk.Button(self.container_pick_1, text="Runes ⚡", bootstyle="info-outline", width=8,
+                                     command=lambda: self._open_rune_direct(self.parent.selected_pick_1))
+        self.btn_rune_1.pack(side="right", padx=(5, 0))
+
+        # ROW 3 (Pick 2 + Rune Btn)
         ttk.Label(frame, text="Pick 2 :").grid(row=3, column=0, sticky="e", padx=5, pady=3)
-        self.btn_pick_2 = ttk.Button(frame, text=self.parent.selected_pick_2, bootstyle="secondary-outline")
-        self.btn_pick_2.grid(row=3, column=1, sticky="ew", padx=5, pady=3)
+        self.container_pick_2 = ttk.Frame(frame)
+        self.container_pick_2.grid(row=3, column=1, sticky="ew", padx=5, pady=3)
+
+        self.btn_pick_2 = ttk.Button(self.container_pick_2, text=self.parent.selected_pick_2, bootstyle="secondary-outline")
+        self.btn_pick_2.pack(side="left", fill="x", expand=True)
         self.btn_pick_2.configure(command=lambda: self._open_champion_picker("pick", 2))
 
+        self.btn_rune_2 = ttk.Button(self.container_pick_2, text="Runes ⚡", bootstyle="info-outline", width=8,
+                                     command=lambda: self._open_rune_direct(self.parent.selected_pick_2))
+        self.btn_rune_2.pack(side="right", padx=(5, 0))
+
+        # ROW 4 (Pick 3 + Rune Btn)
         ttk.Label(frame, text="Pick 3 :").grid(row=4, column=0, sticky="e", padx=5, pady=3)
-        self.btn_pick_3 = ttk.Button(frame, text=self.parent.selected_pick_3, bootstyle="secondary-outline")
-        self.btn_pick_3.grid(row=4, column=1, sticky="ew", padx=5, pady=3)
+        self.container_pick_3 = ttk.Frame(frame)
+        self.container_pick_3.grid(row=4, column=1, sticky="ew", padx=5, pady=3)
+
+        self.btn_pick_3 = ttk.Button(self.container_pick_3, text=self.parent.selected_pick_3, bootstyle="secondary-outline")
+        self.btn_pick_3.pack(side="left", fill="x", expand=True)
         self.btn_pick_3.configure(command=lambda: self._open_champion_picker("pick", 3))
+
+        self.btn_rune_3 = ttk.Button(self.container_pick_3, text="Runes ⚡", bootstyle="info-outline", width=8,
+                                     command=lambda: self._open_rune_direct(self.parent.selected_pick_3))
+        self.btn_rune_3.pack(side="right", padx=(5, 0))
+
 
         # ROW 5 (Auto Ban)
         ttk.Checkbutton(frame, text="Bannir un Champion (Auto-Ban)", variable=self.ban_var,
@@ -424,9 +632,9 @@ class SettingsWindow:
         self.btn_spell_2.grid(row=9, column=1, sticky="ew", padx=5, pady=3)
         self.btn_spell_2.configure(command=lambda: self._open_spell_picker(2))
 
-        # --- ROW 10 : Détection Auto (Anciennement Row 11, remonté car Runes supprimées) ---
+        # ROW 11 : Détection Auto
         detect_frame = ttk.Frame(frame)
-        detect_frame.grid(row=10, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        detect_frame.grid(row=11, column=0, columnspan=2, sticky="w", pady=(15, 5))
         
         def on_auto_toggle():
             self.toggle_summoner_entry()
@@ -445,24 +653,24 @@ class SettingsWindow:
         self.lbl_auto_detect = ttk.Label(detect_frame, text="Détection auto du compte")
         self.lbl_auto_detect.pack(side="left")
 
-        # ROW 11 (Pseudo Entry)
-        ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=11, column=0, sticky="e", padx=5, pady=5)
+        # ROW 12 (Pseudo Entry)
+        ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=12, column=0, sticky="e", padx=5, pady=5)
         self.summ_entry = ttk.Entry(frame, textvariable=self.summ_entry_var, state="readonly")
-        self.summ_entry.grid(row=11, column=1, sticky="ew", padx=5)
+        self.summ_entry.grid(row=12, column=1, sticky="ew", padx=5)
 
-        # ROW 12 (Region)
-        ttk.Label(frame, text="Région :", anchor="w").grid(row=12, column=0, sticky="e", padx=5, pady=5)
+        # ROW 13 (Region)
+        ttk.Label(frame, text="Région :", anchor="w").grid(row=13, column=0, sticky="e", padx=5, pady=5)
         self.region_var = tk.StringVar(value=self.parent.region)
         self.region_cb = ttk.Combobox(frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
-        self.region_cb.grid(row=12, column=1, sticky="ew", padx=5)
+        self.region_cb.grid(row=13, column=1, sticky="ew", padx=5)
         self.region_cb.bind("<<ComboboxSelected>>", lambda e: setattr(self.parent, 'region', self.region_var.get()))
 
-        # ROW 13 (Sep)
-        ttk.Separator(frame).grid(row=13, column=0, columnspan=2, sticky="we", pady=(15, 10))
+        # ROW 14 (Sep)
+        ttk.Separator(frame).grid(row=14, column=0, columnspan=2, sticky="we", pady=(15, 10))
         
-        # ROW 14 (Misc)
+        # ROW 15 (Misc)
         misc_frame = ttk.Frame(frame)
-        misc_frame.grid(row=14, column=0, columnspan=2, sticky="w")
+        misc_frame.grid(row=15, column=0, columnspan=2, sticky="w")
         
         ttk.Checkbutton(misc_frame, text="Retour au salon automatique (Skip Honor)", variable=self.play_again_var,
                         command=lambda: setattr(self.parent, 'auto_play_again_enabled', self.play_again_var.get()),
@@ -490,10 +698,21 @@ class SettingsWindow:
         self._update_btn_content(self.btn_spell_1, self.parent.global_spell_1, is_champ=False)
         self._update_btn_content(self.btn_spell_2, self.parent.global_spell_2, is_champ=False)
 
+    def _open_rune_direct(self, champion_name):
+        if not champion_name: 
+            self.parent.show_toast("Veuillez sélectionner un champion d'abord.")
+            return
+        RuneConfigWindow(self, champion_name)
+
     def _open_champion_picker(self, context="pick", slot_num=1):
         picker = ttk.Toplevel(self.window)
         picker.iconphoto(False, self.window._icon_img)
-        picker.title(f"Sélectionner Champion ({context.title()})")
+        title = "Sélectionner Champion"
+        if context == "rune": title += " (Pour Runes)"
+        elif context == "ban": title += " (Ban)"
+        else: title += f" (Pick {slot_num})"
+        
+        picker.title(title)
         picker.geometry(f"480x600+{self.window.winfo_x()+20}+{self.window.winfo_y()+20}")
 
         search_frame = ttk.Frame(picker, padding=10)
@@ -536,19 +755,24 @@ class SettingsWindow:
                         row += 1
 
         def on_select(champ_name):
-            if context == "ban":
+            if context == "rune":
+                RuneConfigWindow(self, champ_name)
+            elif context == "ban":
                 self.parent.selected_ban = champ_name
                 self._update_btn_content(self.btn_ban, champ_name, True)
             elif context == "pick":
                 if slot_num == 1: 
                     self.parent.selected_pick_1 = champ_name
                     self._update_btn_content(self.btn_pick_1, champ_name, True)
+                    self.btn_rune_1.configure(command=lambda: self._open_rune_direct(champ_name))
                 elif slot_num == 2:
                     self.parent.selected_pick_2 = champ_name
                     self._update_btn_content(self.btn_pick_2, champ_name, True)
+                    self.btn_rune_2.configure(command=lambda: self._open_rune_direct(champ_name))
                 elif slot_num == 3:
                     self.parent.selected_pick_3 = champ_name
                     self._update_btn_content(self.btn_pick_3, champ_name, True)
+                    self.btn_rune_3.configure(command=lambda: self._open_rune_direct(champ_name))
             picker.destroy()
 
         search_var.trace("w", lambda *args: populate_grid(search_var.get()))
@@ -659,6 +883,9 @@ class SettingsWindow:
         self.btn_pick_1.configure(state=st)
         self.btn_pick_2.configure(state=st)
         self.btn_pick_3.configure(state=st)
+        self.btn_rune_1.configure(state=st)
+        self.btn_rune_2.configure(state=st)
+        self.btn_rune_3.configure(state=st)
 
     def toggle_ban(self):
         self.btn_ban.configure(state="normal" if self.ban_var.get() else "disabled")
@@ -669,9 +896,7 @@ class SettingsWindow:
         self.btn_spell_2.configure(state=st)
 
     def _update_detect_label_text(self):
-        """Met à jour le texte du label uniquement si LoL est connecté."""
         detected = self.parent._get_auto_summoner_name()
-
         if self.parent.ws_active and detected:
             self.lbl_auto_detect.configure(text=f"Détection auto du compte (compte détecté : {detected})")
         else:
@@ -710,7 +935,7 @@ class SettingsWindow:
 
 class LoLAssistant:
     SUMMONER_SPELL_MAP = SUMMONER_SPELL_MAP
-    CURRENT_VERSION = "6.0" 
+    CURRENT_VERSION = "6.4" 
     GITHUB_REPO_URL = "https://github.com/qurnt1/main_lol_2"
     RAW_README_URL = "https://raw.githubusercontent.com/qurnt1/main_lol_2/refs/heads/main/readme.md"
 
@@ -742,7 +967,6 @@ class LoLAssistant:
         self.manual_summoner_name = DEFAULT_PARAMS["manual_summoner_name"]
         self.summoner_name_auto_detect = DEFAULT_PARAMS["summoner_name_auto_detect"]
         
-        # --- ANTI-SPAM LOG ---
         self.last_reported_summoner = None 
 
         self.completed_actions = set()
@@ -773,6 +997,7 @@ class LoLAssistant:
         self.selected_ban = DEFAULT_PARAMS["selected_ban"]
         self.global_spell_1 = DEFAULT_PARAMS["global_spell_1"]
         self.global_spell_2 = DEFAULT_PARAMS["global_spell_2"]
+        self.champion_rune_map = DEFAULT_PARAMS.get("champion_rune_map", {})
 
         self.lol_version = "v0.0.0"
         self.theme_var = tk.StringVar(value=self.theme)
@@ -782,6 +1007,8 @@ class LoLAssistant:
             pygame.mixer.init()
             self.sound_effect = pygame.mixer.Sound(resource_path("config/son.wav"))
         except: self.sound_effect = None
+
+        print(f"[INIT] Map Runes chargée au démarrage: {self.champion_rune_map}")
 
         self.create_ui()
         self.create_system_tray()
@@ -823,6 +1050,7 @@ class LoLAssistant:
         self.auto_play_again_enabled = config.get('auto_play_again_enabled', self.auto_play_again_enabled)
         self.auto_hide_on_connect = config.get('auto_hide_on_connect', self.auto_hide_on_connect)
         self.close_app_on_lol_exit = config.get('close_app_on_lol_exit', self.close_app_on_lol_exit)
+        self.champion_rune_map = config.get('champion_rune_map', self.champion_rune_map)
 
     def save_parameters(self):
         config = {
@@ -842,16 +1070,19 @@ class LoLAssistant:
             "global_spell_1": self.global_spell_1,
             "global_spell_2": self.global_spell_2,
             "auto_play_again_enabled": self.auto_play_again_enabled,
-            # La ligne auto_meta_runes a été supprimée ici
             "auto_hide_on_connect": self.auto_hide_on_connect,
             "close_app_on_lol_exit": self.close_app_on_lol_exit,
+            "champion_rune_map": self.champion_rune_map,
         }
         try:
             os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
             with open(PARAMETERS_PATH, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
+            print(f"[SAVE] Paramètres sauvegardés sur disque.")
             self.show_toast("Paramètres sauvegardés !")
-        except: self.show_toast(f"Erreur sauvegarde")
+        except Exception as e:
+            print(f"[SAVE ERROR] {e}")
+            self.show_toast(f"Erreur sauvegarde")
 
     def force_refresh_summoner(self):
         if self.ws_active and self.connection:
@@ -860,34 +1091,26 @@ class LoLAssistant:
                 asyncio.run_coroutine_threadsafe(self._refresh_player_and_region(), self.loop)
 
     def create_ui(self):
-        # Configuration globale du Style pour forcer la police Emojis partout
         style = ttk.Style()
-        # On force la police "Segoe UI Emoji" sur tous les widgets par défaut
         style.configure(".", font=("Segoe UI Emoji", 10))
-        # On crée un style spécifique plus grand pour le statut
         style.configure("Status.TLabel", font=("Segoe UI Emoji", 11), background=self.root['bg'])
         
-        # --- Chargement des images ---
         garen_icon = ImageTk.PhotoImage(Image.open(resource_path("./config/imgs/garen.webp")).resize((32, 32)))
         self.root.iconphoto(False, garen_icon)
         banner_img = ImageTk.PhotoImage(Image.open(resource_path("./config/imgs/garen.webp")).resize((48, 48)))
         
-        # Label d'arrière-plan (Background)
         self.bg_label = tk.Label(self.root, bg="#2b2b2b")
         self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
         self.bg_label.lower()
         
-        # Bannière Garen
         self.banner_label = ttk.Label(self.root, image=banner_img)
         self.banner_label.image = banner_img
         self.banner_label.place(relx=0.5, rely=0.08, anchor="n")
 
-        # Indicateur de connexion (le petit point vert/rouge)
         self.connection_indicator = tk.Canvas(self.root, width=12, height=12, bd=0, highlightthickness=0, bg="#2b2b2b")
         self.connection_indicator.place(relx=0.05, rely=0.05, anchor="nw")
         self.update_connection_indicator(False)
 
-        # UI CLEAN : Message d'accueil sans émoji
         self.status_label = ttk.Label(
             self.root, 
             text="En attente du lancement de League of Legends...", 
@@ -897,25 +1120,21 @@ class LoLAssistant:
         )
         self.status_label.place(relx=0.5, rely=0.38, anchor="center")
 
-        # Bouton Engrenage (Settings)
         gear_path = resource_path("./config/imgs/gear.png")
         if os.path.exists(gear_path):
             gear_img = ImageTk.PhotoImage(Image.open(gear_path).resize((25, 30)))
-            # On utilise un Label au lieu d'un Canvas pour mieux gérer la transparence si besoin
             cog = ttk.Label(self.root, image=gear_img, cursor="hand2")
             cog.image = gear_img
             cog.place(relx=0.95, rely=0.05, anchor="ne")
             cog.bind("<Button-1>", lambda e: self.open_settings())
         else:
-            # Fallback si l'image gear n'existe pas
             cog = ttk.Button(self.root, text="⚙", command=self.open_settings, bootstyle="link")
             cog.place(relx=0.95, rely=0.05, anchor="ne")
 
-        # UI FRIENDLY : Bouton OP.GG avec style arrondi ("outline" fait plus moderne)
         opgg_btn = ttk.Button(
             self.root, 
             text="Voir mes stats (OP.GG)", 
-            bootstyle="success-outline", # Style moderne
+            bootstyle="success-outline",
             padding=(20, 10), 
             width=22, 
             command=lambda: webbrowser.open(self.build_opgg_url())
@@ -925,18 +1144,13 @@ class LoLAssistant:
         self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
 
     def set_background_splash(self, champion_name):
-        """Met le Splash Art du champion en fond d'écran de l'app."""
         def _task():
             try:
-                # 1. Résolution du nom (DataDragon veut "MonkeyKing" pas "Wukong")
                 cid = self.dd.resolve_champion(champion_name)
                 if not cid: return
                 real_name = self.dd.by_id[cid].get("id", champion_name)
-
-                # 2. URL du Splash Art (Skin par défaut _0)
                 url = f"https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{real_name}_0.jpg"
                 
-                # 3. Téléchargement
                 response = requests.get(url, stream=True, timeout=5)
                 if response.status_code == 200:
                     from io import BytesIO
@@ -945,16 +1159,11 @@ class LoLAssistant:
                     img_data = BytesIO(response.content)
                     pil_img = Image.open(img_data)
 
-                    # 4. Redimensionnement "Center Crop" pour ta fenêtre 380x180
-                    # On veut que l'image remplisse la fenêtre
                     window_w, window_h = 380, 180
-                    
-                    # On redimensionne en gardant le ratio pour couvrir toute la largeur
                     base_width = window_w
                     w_percent = (base_width / float(pil_img.size[0]))
                     h_size = int((float(pil_img.size[1]) * float(w_percent)))
                     
-                    # Si l'image redimensionnée est moins haute que la fenêtre, on se base sur la hauteur
                     if h_size < window_h:
                         base_height = window_h
                         h_percent = (base_height / float(pil_img.size[1]))
@@ -963,24 +1172,21 @@ class LoLAssistant:
                     else:
                         pil_img = pil_img.resize((base_width, h_size), Image.Resampling.LANCZOS)
 
-                    # Crop au centre
                     left = (pil_img.width - window_w) / 2
                     top = (pil_img.height - window_h) / 2
                     right = (pil_img.width + window_w) / 2
                     bottom = (pil_img.height + window_h) / 2
                     pil_img = pil_img.crop((left, top, right, bottom))
 
-                    # 5. Assombrir l'image (pour la lisibilité du texte)
                     enhancer = ImageEnhance.Brightness(pil_img)
-                    pil_img = enhancer.enhance(0.4) # 0.4 = très sombre (40% luminosité)
+                    pil_img = enhancer.enhance(0.4) 
 
-                    # 6. Affichage (Mise à jour UI dans le thread principal)
                     tk_img = ImageTk.PhotoImage(pil_img)
                     
                     def _update_ui():
                         if self.root.winfo_exists():
                             self.bg_label.configure(image=tk_img)
-                            self.bg_label.image = tk_img # Garder la référence !
+                            self.bg_label.image = tk_img 
                     
                     self.root.after(0, _update_ui)
 
@@ -1064,12 +1270,8 @@ class LoLAssistant:
 
     def update_status(self, message: str, emoji: str = ""):
         now = datetime.now().strftime("%H:%M:%S")
-        
-        # LOG CONSOLE : AVEC EMOJI
         log_msg = f"[{now}] {emoji} {message}" if emoji else f"[{now}] {message}"
         print(log_msg, flush=True)
-        
-        # LOG UI : SANS EMOJI (CLEAN)
         self.root.after(0, lambda: self.status_label.config(text=message))
 
     def update_connection_indicator(self, connected: bool):
@@ -1116,7 +1318,6 @@ class LoLAssistant:
                 me = await resp_me.json()
                 self.summoner = me.get("displayName", "Inconnu")
         
-        # --- ANTI-SPAM LOG ---
         if self.summoner != self.last_reported_summoner:
             self.update_status(f"Connecté : {self._riot_id_display_string()}", "👤")
             self.last_reported_summoner = self.summoner
@@ -1201,7 +1402,7 @@ class LoLAssistant:
                 if action.get("actorCellId") == local_id and not action.get("completed"):
                     my_actions.append(action)
 
-        # ─── PRE-PICK ─────────────────────────────────────────────
+        # PRE-PICK
         if self.auto_pick_enabled and self.selected_pick_1:
             pick_action = next((a for a in my_actions if a.get("type") == "pick"), None)
             if pick_action:
@@ -1212,7 +1413,7 @@ class LoLAssistant:
                         await self._hover_champion(pick_action["id"], target_cid)
                         self.last_intent_try_ts = time()
 
-        # ─── ACTIONS (BAN & PICK) ────────────────────────────────
+        # ACTIONS (BAN & PICK)
         active_action = next((a for a in my_actions if a.get("isInProgress") is True), None)
 
         if active_action:
@@ -1223,10 +1424,6 @@ class LoLAssistant:
 
             elif action_type == "pick" and self.auto_pick_enabled:
                 await self._logic_do_pick(active_action)
-
-    # ───────────────────────────────────────────────────────────────────────
-    # FONCTIONS D'EXECUTION ROBUSTES
-    # ───────────────────────────────────────────────────────────────────────
 
     async def _hover_champion(self, action_id, champion_id):
         url = f"/lol-champ-select/v1/session/actions/{action_id}"
@@ -1243,86 +1440,81 @@ class LoLAssistant:
         success = await self._lock_in_champion(action["id"], cid)
         if success:
             self.has_banned = True
-            # CLEAN UI + EMOJI CONSOLE
             self.update_status(f"Ciao ! {self.selected_ban} a été banni.", "💀")
 
     async def _logic_do_pick(self, action):
-        """
-        Gère le pick avec Fallback instantané.
-        Si Pick 1 est refusé (ban/pris), il tente Pick 2 DANS LA MEME SECONDE.
-        """
         if time() - self.last_action_try_ts < 0.1: return
         self.last_action_try_ts = time()
 
+        # LOG DEBUG
+        print(f"[Pick] --- TENTATIVE DE PICK DETECTEE --- (Action ID: {action['id']})")
+
         pickable_ids = []
         try:
-            r = await self.connection.request('get', "/lol-champ-select/v1/pickable-champion-ids")
-            if r.status == 200: pickable_ids = await r.json()
+            r = await self.connection.request('get', EP_PICKABLE)
+            if r.status == 200: 
+                pickable_ids = await r.json()
         except: pass
         
         pickable_set = set(pickable_ids) if pickable_ids else set()
-        
-        # En custom game, la liste est souvent vide (bug API), on doit "forcer" l'essai
         is_list_empty = (len(pickable_set) == 0)
+        
+        # LOG DEBUG
+        print(f"[Pick] Champions pickables disponibles (len): {len(pickable_set)}")
 
-        # On itère sur les choix (Pick 1 -> Pick 2 -> Pick 3)
         for name in [self.selected_pick_1, self.selected_pick_2, self.selected_pick_3]:
             if not name: continue
             cid = self.dd.resolve_champion(name)
-            if not cid: continue
-
-            # Condition pour essayer ce champion :
-            # 1. Soit il est explicitement dans la liste des dispos
-            # 2. Soit la liste est vide (bug custom) et on tente le coup "à l'aveugle"
+            if not cid: 
+                print(f"[Pick] Nom de champion invalide: {name}")
+                continue
+            
+            print(f"[Pick] Analyse du choix: {name} (ID: {cid})...")
+            
             should_try = (cid in pickable_set) or is_list_empty
 
             if should_try:
-                # On tente de le lock
+                print(f"[Pick] -> Tentative de lock-in pour {name}...")
                 success = await self._lock_in_champion(action["id"], cid)
+                
+                # Modif Debug: On considère que si le lock-in a été envoyé, on tente quand même les runes
+                # même si le retour est False (car parfois l'API foire mais le pick passe)
                 if success:
+                    print(f"[Pick] -> SUCCES Lock-in {name}")
                     self.has_picked = True
-                    # CLEAN UI + EMOJI CONSOLE
                     self.update_status(f"{name} sécurisé ! À toi de jouer.", "🔒")
-                    
-                    # AJOUT ICI :
                     self.set_background_splash(name)
                     
-                    # MODIFICATION ICI : On lance seulement les sorts si activé, plus de runes
+                    print(f"[Logic] Champion pické: {name}. Lancement config runes...")
+                    asyncio.create_task(self._apply_rune_page(name))
+
                     if self.auto_summoners_enabled:
                          asyncio.create_task(self._set_spells())
-
-                    return # C'est bon, on arrête tout, on a pick !
+                    return 
                 else:
-                    # Si ça échoue ici (et qu'on a forcé), ça veut dire qu'il est ban/pris.
-                    # On continue la boucle pour essayer le Pick 2 immédiatement.
-                    pass
+                    print(f"[Pick] -> ECHEC Lock-in pour {name}. Essai suivant...")
+            else:
+                 print(f"[Pick] {name} (ID {cid}) n'est PAS dans la liste pickable (Banni ou pas possédé ?)")
         
-        # Si on sort de la boucle sans return, c'est qu'on a tout raté
         self.update_status("Aucun champion dispo ou configuré (ou tous bannis) !", "⚠️")
 
     async def _lock_in_champion(self, action_id, champion_id):
-        """
-        METHODE DOUBLE FORCE : On utilise l'ancienne et la nouvelle méthode
-        en même temps pour être sûr que ça valide.
-        """
         url_action = f"/lol-champ-select/v1/session/actions/{action_id}"
-        
-        # 1. Sélectionner (Hover)
         await self.connection.request('patch', url_action, json={"championId": champion_id})
-        
-        # 2. Petite pause technique indispensable pour certaines versions du client
         await asyncio.sleep(0.05) 
-
-        # 3. FORCE METHODE 1 : "completed": True dans le patch (ancienne méthode, marche encore souvent)
-        await self.connection.request('patch', url_action, json={"championId": champion_id, "completed": True})
-
-        # 4. FORCE METHODE 2 : POST complete (nouvelle méthode officielle)
-        r = await self.connection.request('post', f"{url_action}/complete")
         
-        # Si le serveur renvoie 2xx (Success), c'est gagné.
-        if r.status < 400: return True
-        return False # Echec (Probablement Ban ou Pris)
-
+        # Essai de lock standard
+        r_complete = await self.connection.request('post', f"{url_action}/complete", json={"championId": champion_id})
+        print(f"[Pick] Lock-in Result (1er essai): {r_complete.status}")
+        
+        if r_complete.status < 400: return True
+        
+        # Retry bourrin si échec (parfois nécessaire)
+        await asyncio.sleep(0.1)
+        r_retry = await self.connection.request('post', f"{url_action}/complete")
+        print(f"[Pick] Lock-in Result (Retry): {r_retry.status}")
+        
+        return r_retry.status < 400
 
     async def _set_spells(self):
         if not self.connection: return
@@ -1333,6 +1525,45 @@ class LoLAssistant:
         payload = {"spell1Id": spell1_id, "spell2Id": spell2_id}
         r = await self.connection.request('patch', "/lol-champ-select/v1/session/my-selection", json=payload)
         if r and r.status < 400: self.update_status(f"Sorts auto-sélectionnés ({spell1_name}, {spell2_name})", "🪄")
+
+    async def _apply_rune_page(self, champion_name):
+        print(f"\n[Runes] --- DEBUT APPLICATION RUNES ---")
+        print(f"[Runes] Champion demandé : {champion_name}")
+        
+        # DEBUG: Afficher la map complète en mémoire
+        print(f"[Runes] Etat de la MAP mémoire AVANT lecture : {self.champion_rune_map}")
+        
+        page_id = self.champion_rune_map.get(champion_name)
+        if not page_id:
+            print(f"[Runes] AUCUNE page configurée pour {champion_name} dans la map.")
+            return
+
+        print(f"[Runes] ID cible trouvé dans la config : {page_id} (Type: {type(page_id)})")
+
+        pages_req = await self.connection.request('get', EP_PERKS_PAGES)
+        if pages_req.status != 200: 
+            print(f"[Runes] ERREUR : Impossible de récupérer les pages du client (Status {pages_req.status})")
+            return
+        
+        pages = await pages_req.json()
+        print(f"[Runes] Nombre de pages dans le client : {len(pages)}")
+        
+        # Vérification si l'ID existe
+        target_page = next((p for p in pages if p['id'] == int(page_id)), None)
+        
+        if target_page:
+            print(f"[Runes] Page correspondante trouvée dans le client : '{target_page['name']}' (ID {target_page['id']})")
+            res = await self.connection.request('put', EP_PERKS_CURRENT, json=int(page_id))
+            
+            if res.status < 400:
+                self.update_status(f"Page de runes chargée : {target_page['name']}", "📜")
+                print(f"[Runes] SUCCES : Page appliquée !")
+            else:
+                print(f"[Runes] ECHEC : Le client a refusé le changement (Status {res.status})")
+        else:
+            self.update_status(f"Page de runes (ID {page_id}) introuvable !", "⚠️")
+            print(f"[Runes] CRITIQUE : L'ID {page_id} est dans la config mais n'existe plus dans le client LoL.")
+            print(f"[Runes] Liste des IDs disponibles : {[p['id'] for p in pages]}")
 
     async def _handle_post_game(self):
         if not self.auto_play_again_enabled: return
@@ -1357,7 +1588,6 @@ class LoLAssistant:
                 self.connection = connection
                 self.ws_active = True
                 self.update_connection_indicator(True)
-                # CLEAN UI + EMOJI CONSOLE
                 self.update_status("Client LoL détecté ! Prêt à vous aider.", "⚡")
                 logging.info("WebSocket: Connecté au client LCU.")
                 await self._refresh_player_and_region()
@@ -1368,7 +1598,6 @@ class LoLAssistant:
                 self.connection = None
                 self.ws_active = False
                 self.update_connection_indicator(False)
-                # CLEAN UI + EMOJI CONSOLE
                 self.update_status("LoL fermé. En attente...", "💤")
                 self.last_reported_summoner = None 
                 logging.info("WebSocket: Déconnecté.")
@@ -1398,7 +1627,6 @@ class LoLAssistant:
                     logging.info(f"Phase changée : {self.current_phase} -> {phase}")
                 self.current_phase = phase
                 
-                # CLEAN UI : Traduction des phases sans Emojis dans la valeur, ajoutés via update_status
                 phase_map = {
                     "Lobby": "Au Salon (Lobby)",
                     "Matchmaking": "Recherche de partie...",
@@ -1452,7 +1680,6 @@ class LoLAssistant:
         self.save_parameters()
 
     def check_for_updates(self):
-        """Vérifie la version sur GitHub en tâche de fond."""
         def _check():
             print("[Update] Vérification des mises à jour...")
             try:
@@ -1477,13 +1704,11 @@ class LoLAssistant:
         Thread(target=_check, daemon=True).start()
 
     def _show_update_popup(self, new_version):
-        # On crée une fenêtre personnalisée pour avoir l'icône
         popup = ttk.Toplevel(self.root)
         popup.title("Mise à jour MAIN LOL")
         popup.geometry("400x250")
         popup.resizable(False, False)
         
-        # Centrer la popup
         popup.update_idletasks()
         width = popup.winfo_width()
         height = popup.winfo_height()
@@ -1491,7 +1716,6 @@ class LoLAssistant:
         y = (popup.winfo_screenheight() // 2) - (height // 2)
         popup.geometry(f'{width}x{height}+{x}+{y}')
 
-        # 1. Gestion de l'icône
         try:
             icon_path = resource_path("./config/imgs/garen.webp")
             if os.path.exists(icon_path):
@@ -1502,7 +1726,6 @@ class LoLAssistant:
                 popup._icon_ref = photo 
         except: pass
 
-        # 2. Design "Moderne"
         title_lbl = ttk.Label(
             popup, 
             text="Nouvelle version détectée !", 
@@ -1517,7 +1740,6 @@ class LoLAssistant:
         info_text = f"Une mise à jour est disponible sur GitHub.\n\nVersion actuelle : {self.CURRENT_VERSION}\nNouvelle version : {new_version}"
         ttk.Label(info_frame, text=info_text, justify="center", font=("Segoe UI", 11)).pack(pady=5)
 
-        # Boutons
         btn_frame = ttk.Frame(popup, padding=(0, 0, 0, 20))
         btn_frame.pack(fill="x")
 
@@ -1525,12 +1747,9 @@ class LoLAssistant:
             webbrowser.open(self.GITHUB_REPO_URL)
             popup.destroy()
 
-        # CORRECTION ICI : On retire "-round" qui fait planter ton script
-        # On garde "success" tout court (ou "success-outline" si tu préfères les contours)
         btn_yes = ttk.Button(btn_frame, text="Télécharger", bootstyle="success", command=on_download, width=15)
         btn_yes.pack(side="left", padx=(40, 10), expand=True)
 
-        # CORRECTION ICI : Idem pour secondary
         btn_no = ttk.Button(btn_frame, text="Plus tard", bootstyle="secondary", command=popup.destroy, width=15)
         btn_no.pack(side="right", padx=(10, 40), expand=True)
         
