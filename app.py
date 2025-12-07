@@ -110,7 +110,6 @@ DEFAULT_PARAMS = {
     "global_spell_1": "Heal",
     "global_spell_2": "Flash",
     "auto_play_again_enabled": False,
-    "auto_meta_runes_enabled": True,
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
 }
@@ -352,7 +351,6 @@ class SettingsWindow:
         self.summ_entry_var = tk.StringVar(value=parent.manual_summoner_name)
         self.saved_manual_name = parent.manual_summoner_name
         self.play_again_var = tk.BooleanVar(value=parent.auto_play_again_enabled)
-        self.meta_runes_var = tk.BooleanVar(value=parent.auto_meta_runes_enabled)
         self.auto_hide_var = tk.BooleanVar(value=parent.auto_hide_on_connect)
         self.close_on_exit_var = tk.BooleanVar(value=parent.close_app_on_lol_exit)
 
@@ -372,8 +370,6 @@ class SettingsWindow:
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(0, weight=0) 
         frame.columnconfigure(1, weight=1) 
-
-        # --- MODIF : NETTOYAGE DES EMOJIS DANS L'UI ---
 
         # ROW 0
         ttk.Checkbutton(frame, text="Accepter la partie (Auto-Accept)", variable=self.auto_var,
@@ -428,14 +424,9 @@ class SettingsWindow:
         self.btn_spell_2.grid(row=9, column=1, sticky="ew", padx=5, pady=3)
         self.btn_spell_2.configure(command=lambda: self._open_spell_picker(2))
 
-        # ROW 10 (Runes)
-        ttk.Checkbutton(frame, text="Importer les Runes Meta (Auto-Runes)", variable=self.meta_runes_var,
-                        command=lambda: setattr(self.parent, 'auto_meta_runes_enabled', self.meta_runes_var.get()),
-                        bootstyle="primary-round-toggle").grid(row=10, column=0, columnspan=2, sticky="w", pady=(15, 5))
-
-        # --- ROW 11 : Détection Auto ---
+        # --- ROW 10 : Détection Auto (Anciennement Row 11, remonté car Runes supprimées) ---
         detect_frame = ttk.Frame(frame)
-        detect_frame.grid(row=11, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        detect_frame.grid(row=10, column=0, columnspan=2, sticky="w", pady=(15, 5))
         
         def on_auto_toggle():
             self.toggle_summoner_entry()
@@ -454,34 +445,34 @@ class SettingsWindow:
         self.lbl_auto_detect = ttk.Label(detect_frame, text="Détection auto du compte")
         self.lbl_auto_detect.pack(side="left")
 
-        # ROW 12 (Pseudo Entry)
-        ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=12, column=0, sticky="e", padx=5, pady=5)
+        # ROW 11 (Pseudo Entry)
+        ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=11, column=0, sticky="e", padx=5, pady=5)
         self.summ_entry = ttk.Entry(frame, textvariable=self.summ_entry_var, state="readonly")
-        self.summ_entry.grid(row=12, column=1, sticky="ew", padx=5)
+        self.summ_entry.grid(row=11, column=1, sticky="ew", padx=5)
 
-        # ROW 13 (Region)
-        ttk.Label(frame, text="Région :", anchor="w").grid(row=13, column=0, sticky="e", padx=5, pady=5)
+        # ROW 12 (Region)
+        ttk.Label(frame, text="Région :", anchor="w").grid(row=12, column=0, sticky="e", padx=5, pady=5)
         self.region_var = tk.StringVar(value=self.parent.region)
         self.region_cb = ttk.Combobox(frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
-        self.region_cb.grid(row=13, column=1, sticky="ew", padx=5)
+        self.region_cb.grid(row=12, column=1, sticky="ew", padx=5)
         self.region_cb.bind("<<ComboboxSelected>>", lambda e: setattr(self.parent, 'region', self.region_var.get()))
 
-        # ROW 14 (Sep)
-        ttk.Separator(frame).grid(row=14, column=0, columnspan=2, sticky="we", pady=(15, 10))
+        # ROW 13 (Sep)
+        ttk.Separator(frame).grid(row=13, column=0, columnspan=2, sticky="we", pady=(15, 10))
         
-        # ROW 15 (Misc)
+        # ROW 14 (Misc)
         misc_frame = ttk.Frame(frame)
-        misc_frame.grid(row=15, column=0, columnspan=2, sticky="w")
+        misc_frame.grid(row=14, column=0, columnspan=2, sticky="w")
         
-        ttk.Checkbutton(misc_frame, text="Rejouer automatiquement (Skip Honor)", variable=self.play_again_var,
+        ttk.Checkbutton(misc_frame, text="Retour au salon automatique (Skip Honor)", variable=self.play_again_var,
                         command=lambda: setattr(self.parent, 'auto_play_again_enabled', self.play_again_var.get()),
                         bootstyle="info-round-toggle").pack(anchor="w", pady=2)
         
-        ttk.Checkbutton(misc_frame, text="Masquer l'app quand LoL se lance", variable=self.auto_hide_var,
+        ttk.Checkbutton(misc_frame, text="Masquer Main LOL quand LoL se lance", variable=self.auto_hide_var,
                         command=lambda: setattr(self.parent, 'auto_hide_on_connect', self.auto_hide_var.get()),
                         bootstyle="secondary-round-toggle").pack(anchor="w", pady=2)
         
-        ttk.Checkbutton(misc_frame, text="Fermer l'app quand LoL se ferme", variable=self.close_on_exit_var,
+        ttk.Checkbutton(misc_frame, text="Fermer Main LOL quand LoL se ferme", variable=self.close_on_exit_var,
                         command=lambda: setattr(self.parent, 'close_app_on_lol_exit', self.close_on_exit_var.get()),
                         bootstyle="danger-round-toggle").pack(anchor="w", pady=2)
 
@@ -708,7 +699,6 @@ class SettingsWindow:
             self.parent.manual_summoner_name = self.summ_entry_var.get()
             self.parent.region = self.region_var.get()
         self.parent.auto_play_again_enabled = self.play_again_var.get()
-        self.parent.auto_meta_runes_enabled = self.meta_runes_var.get()
         self.parent.auto_hide_on_connect = self.auto_hide_var.get()
         self.parent.close_app_on_lol_exit = self.close_on_exit_var.get()
         self.parent.save_parameters()
@@ -740,7 +730,6 @@ class LoLAssistant:
         self.platform_routing = "euw1"
         self.region_routing = "europe"
         self.auto_play_again_enabled = DEFAULT_PARAMS["auto_play_again_enabled"]
-        self.auto_meta_runes_enabled = DEFAULT_PARAMS["auto_meta_runes_enabled"]
         self.auto_hide_on_connect = DEFAULT_PARAMS["auto_hide_on_connect"]
         self.close_app_on_lol_exit = DEFAULT_PARAMS["close_app_on_lol_exit"]
         self.settings_win = None
@@ -832,7 +821,6 @@ class LoLAssistant:
         self.global_spell_1 = config.get('global_spell_1', self.global_spell_1)
         self.global_spell_2 = config.get('global_spell_2', self.global_spell_2)
         self.auto_play_again_enabled = config.get('auto_play_again_enabled', self.auto_play_again_enabled)
-        self.auto_meta_runes_enabled = config.get('auto_meta_runes_enabled', self.auto_meta_runes_enabled)
         self.auto_hide_on_connect = config.get('auto_hide_on_connect', self.auto_hide_on_connect)
         self.close_app_on_lol_exit = config.get('close_app_on_lol_exit', self.close_app_on_lol_exit)
 
@@ -854,7 +842,7 @@ class LoLAssistant:
             "global_spell_1": self.global_spell_1,
             "global_spell_2": self.global_spell_2,
             "auto_play_again_enabled": self.auto_play_again_enabled,
-            "auto_meta_runes_enabled": self.auto_meta_runes_enabled,
+            # La ligne auto_meta_runes a été supprimée ici
             "auto_hide_on_connect": self.auto_hide_on_connect,
             "close_app_on_lol_exit": self.close_app_on_lol_exit,
         }
@@ -1299,7 +1287,10 @@ class LoLAssistant:
                     # AJOUT ICI :
                     self.set_background_splash(name)
                     
-                    asyncio.create_task(self._set_spells_and_runes(name))
+                    # MODIFICATION ICI : On lance seulement les sorts si activé, plus de runes
+                    if self.auto_summoners_enabled:
+                         asyncio.create_task(self._set_spells())
+
                     return # C'est bon, on arrête tout, on a pick !
                 else:
                     # Si ça échoue ici (et qu'on a forcé), ça veut dire qu'il est ban/pris.
@@ -1332,12 +1323,6 @@ class LoLAssistant:
         if r.status < 400: return True
         return False # Echec (Probablement Ban ou Pris)
 
-    async def _set_spells_and_runes(self, champion_name: str):
-        try:
-            if self.auto_summoners_enabled: await self._set_spells()
-            if self.auto_meta_runes_enabled: await self._set_runes(champion_name)
-        except Exception as e:
-            print(f"[Runes/Spells] Erreur: {e}")
 
     async def _set_spells(self):
         if not self.connection: return
@@ -1348,61 +1333,6 @@ class LoLAssistant:
         payload = {"spell1Id": spell1_id, "spell2Id": spell2_id}
         r = await self.connection.request('patch', "/lol-champ-select/v1/session/my-selection", json=payload)
         if r and r.status < 400: self.update_status(f"Sorts auto-sélectionnés ({spell1_name}, {spell2_name})", "🪄")
-
-    async def _set_runes(self, champion_name: str):
-        if not self.connection: return
-        champ_id = self.dd.resolve_champion(champion_name)
-        if not champ_id: return
-
-        position = (self.assigned_position or "").upper()
-        if position == "ADC": position = "BOTTOM"
-        if position == "SUPPORT": position = "UTILITY"
-        if not position: return
-
-        self.update_status(f"Runes : Recherche page Riot pour {champion_name} ({position})...", "🔮")
-        try:
-            r = await self.connection.request('get', f"/lol-perks/v1/recommended-pages/champion/{champ_id}/position/{position}")
-            if r.status != 200: return
-            rec_pages = await r.json()
-            if not rec_pages: return
-            
-            target_page = rec_pages[0]
-            payload = {
-                "name": f"Auto {champion_name} ({position})",
-                "primaryStyleId": target_page.get("primaryPerkStyleId"),
-                "subStyleId": target_page.get("subPerkStyleId"),
-                "selectedPerkIds": target_page.get("selectedPerkIds"),
-                "current": True
-            }
-
-            pages_resp = await self.connection.request('get', "/lol-perks/v1/pages")
-            all_pages = await pages_resp.json()
-            existing_page_id = None
-            for p in all_pages:
-                if p.get("name", "").startswith("Auto ") and p.get("isEditable"):
-                    existing_page_id = p.get("id")
-                    break
-
-            final_id = None
-            if existing_page_id:
-                await self.connection.request('put', f"/lol-perks/v1/pages/{existing_page_id}", json=payload)
-                final_id = existing_page_id
-            else:
-                create_resp = await self.connection.request('post', "/lol-perks/v1/pages", json=payload)
-                if create_resp.status >= 400:
-                    first_editable = next((p for p in all_pages if p.get("isEditable")), None)
-                    if first_editable:
-                        await self.connection.request('delete', f"/lol-perks/v1/pages/{first_editable['id']}")
-                        create_resp = await self.connection.request('post', "/lol-perks/v1/pages", json=payload)
-                new_page = await create_resp.json()
-                final_id = new_page.get("id")
-
-            if final_id:
-                await self.connection.request('put', "/lol-perks/v1/currentpage", data=str(final_id))
-                # UI CLEAN + EMOJI CONSOLE
-                self.update_status(f"Runes importées pour {champion_name} (Mode Tryhard)", "✨")
-        except Exception as e:
-            print(f"[Runes] Erreur application runes : {e}")
 
     async def _handle_post_game(self):
         if not self.auto_play_again_enabled: return
