@@ -1,20 +1,26 @@
 """
-MAIN LOL - Module Interface Graphique
---------------------------------------
+MAIN LOL - Module Interface Graphique (Refactorisé v6.1)
+---------------------------------------------------------
 Contient LoLAssistantUI (fenêtre principale) et SettingsWindow.
 Toutes les mises à jour UI utilisent root.after() pour la thread-safety.
+
+Améliorations v6.1:
+- ThreadPoolExecutor pour le chargement des icônes
+- Méthodes create_widgets() décomposées en sous-méthodes
+- Logging des erreurs au lieu de pass silencieux
+- Imports explicites (plus de wildcard)
 """
 
 import os
+import logging
 import webbrowser
-from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, Dict, Any, Callable
 
 import tkinter as tk
 from tkinter import ttk as ttk_widget
 import ttkbootstrap as ttk
-from ttkbootstrap.constants import *
 from ttkbootstrap.scrolled import ScrolledFrame
 from PIL import Image, ImageTk, ImageEnhance
 import pystray
@@ -26,6 +32,19 @@ from .config import (
     REGION_LIST, SUMMONER_SPELL_LIST, DEFAULT_PARAMS
 )
 from .utils import build_opgg_url, build_porofessor_url
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# CONSTANTES (remplace l'import wildcard de ttkbootstrap.constants)
+# ───────────────────────────────────────────────────────────────────────────
+
+# Bootstyles les plus utilisés
+BOOTSTYLE_SUCCESS = "success"
+BOOTSTYLE_PRIMARY = "primary"
+BOOTSTYLE_SECONDARY = "secondary"
+BOOTSTYLE_DANGER = "danger"
+BOOTSTYLE_INFO = "info"
+BOOTSTYLE_WARNING = "warning"
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -50,121 +69,190 @@ class SettingsWindow:
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
         
         # Icône
-        try:
-            img = Image.open(resource_path("./config/imgs/garen.webp")).resize((16, 16))
-            photo = ImageTk.PhotoImage(img)
-            self.window.iconphoto(False, photo)
-            self.window._icon_img = photo
-        except Exception:
-            self.window._icon_img = None
+        self._setup_window_icon()
         
         # Variables liées aux paramètres
-        params = parent.get_params()
-        self.auto_var = tk.BooleanVar(value=params.get("auto_accept_enabled", True))
-        self.pick_var = tk.BooleanVar(value=params.get("auto_pick_enabled", True))
-        self.ban_var = tk.BooleanVar(value=params.get("auto_ban_enabled", True))
-        self.summ_var = tk.BooleanVar(value=params.get("auto_summoners_enabled", True))
-        self.summ_auto_var = tk.BooleanVar(value=params.get("summoner_name_auto_detect", True))
-        self.summ_entry_var = tk.StringVar(value=params.get("manual_summoner_name", ""))
-        self.saved_manual_name = params.get("manual_summoner_name", "")
-        self.play_again_var = tk.BooleanVar(value=params.get("auto_play_again_enabled", False))
-        self.auto_hide_var = tk.BooleanVar(value=params.get("auto_hide_on_connect", True))
-        self.close_on_exit_var = tk.BooleanVar(value=params.get("close_app_on_lol_exit", True))
+        self._init_variables()
         
         # Liste des champions
         self.all_champions = parent.dd.all_names if parent.dd.all_names else ["Garen", "Teemo", "Ashe"]
         self.spell_list = SUMMONER_SPELL_LIST[:]
         
+        # Frame principal
+        self.main_frame: Optional[ttk.Frame] = None
+        
         self.create_widgets()
         self.window.after(100, self.toggle_summoner_entry)
         self.window.after(1000, self._poll_summoner_label)
     
-    def create_widgets(self) -> None:
-        """Crée tous les widgets de la fenêtre."""
-        frame = ttk.Frame(self.window, padding=15)
-        frame.pack(fill="both", expand=True)
-        frame.columnconfigure(0, weight=0)
-        frame.columnconfigure(1, weight=1)
-        
+    def _setup_window_icon(self) -> None:
+        """Configure l'icône de la fenêtre."""
+        try:
+            img = Image.open(resource_path("./config/imgs/garen.webp")).resize((16, 16))
+            photo = ImageTk.PhotoImage(img)
+            self.window.iconphoto(False, photo)
+            self.window._icon_img = photo
+        except Exception as e:
+            logging.debug(f"Impossible de charger l'icône de la fenêtre Settings: {e}")
+            self.window._icon_img = None
+    
+    def _init_variables(self) -> None:
+        """Initialise toutes les variables Tkinter liées aux paramètres."""
         params = self.parent.get_params()
         
-        # ROW 0: Auto Accept
+        # Variables de toggle
+        self.auto_accept_var = tk.BooleanVar(value=params.get("auto_accept_enabled", True))
+        self.auto_pick_var = tk.BooleanVar(value=params.get("auto_pick_enabled", True))
+        self.auto_ban_var = tk.BooleanVar(value=params.get("auto_ban_enabled", True))
+        self.auto_summoners_var = tk.BooleanVar(value=params.get("auto_summoners_enabled", True))
+        self.summoner_auto_detect_var = tk.BooleanVar(value=params.get("summoner_name_auto_detect", True))
+        self.summoner_entry_var = tk.StringVar(value=params.get("manual_summoner_name", ""))
+        self.saved_manual_name = params.get("manual_summoner_name", "")
+        self.play_again_var = tk.BooleanVar(value=params.get("auto_play_again_enabled", False))
+        self.auto_hide_var = tk.BooleanVar(value=params.get("auto_hide_on_connect", True))
+        self.close_on_exit_var = tk.BooleanVar(value=params.get("close_app_on_lol_exit", True))
+        
+        # Aliases pour compatibilité (variables renommées)
+        self.auto_var = self.auto_accept_var
+        self.pick_var = self.auto_pick_var
+        self.ban_var = self.auto_ban_var
+        self.summ_var = self.auto_summoners_var
+        self.summ_auto_var = self.summoner_auto_detect_var
+        self.summ_entry_var = self.summoner_entry_var
+    
+    def create_widgets(self) -> None:
+        """Crée tous les widgets de la fenêtre (méthode principale)."""
+        self.main_frame = ttk.Frame(self.window, padding=15)
+        self.main_frame.pack(fill="both", expand=True)
+        self.main_frame.columnconfigure(0, weight=0)
+        self.main_frame.columnconfigure(1, weight=1)
+        
+        current_row = 0
+        
+        # Sections modulaires
+        current_row = self._create_auto_accept_section(current_row)
+        current_row = self._create_pick_section(current_row)
+        current_row = self._create_ban_section(current_row)
+        current_row = self._create_spells_section(current_row)
+        current_row = self._create_summoner_detection_section(current_row)
+        current_row = self._create_misc_section(current_row)
+        
+        # Bouton Fermer
+        ttk.Button(
+            self.window, text="Fermer", command=self.on_close, bootstyle="primary"
+        ).pack(pady=(0, 20), side="bottom")
+        
+        # Initialiser les états
+        self.toggle_pick()
+        self.toggle_ban()
+        self.toggle_spells()
+        self.toggle_summoner_entry()
+        
+        # Charger les icônes dans les boutons
+        self._load_initial_icons()
+    
+    def _create_auto_accept_section(self, start_row: int) -> int:
+        """Crée la section Auto-Accept."""
         ttk.Checkbutton(
-            frame, text="Accepter la partie automatiquement", 
-            variable=self.auto_var,
-            command=lambda: self.parent.update_param("auto_accept_enabled", self.auto_var.get()),
+            self.main_frame, text="Accepter la partie automatiquement", 
+            variable=self.auto_accept_var,
+            command=lambda: self.parent.update_param("auto_accept_enabled", self.auto_accept_var.get()),
             bootstyle="success-round-toggle"
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=5)
+        ).grid(row=start_row, column=0, columnspan=2, sticky="w", pady=5)
         
-        # ROW 1: Auto Pick Toggle
+        return start_row + 1
+    
+    def _create_pick_section(self, start_row: int) -> int:
+        """Crée la section Auto-Pick avec les 3 slots de champions."""
+        params = self.parent.get_params()
+        
+        # Toggle Auto Pick
         ttk.Checkbutton(
-            frame, text="Sécuriser mon Champion", 
-            variable=self.pick_var,
-            command=lambda: (self.parent.update_param("auto_pick_enabled", self.pick_var.get()), self.toggle_pick()),
+            self.main_frame, text="Sécuriser mon Champion", 
+            variable=self.auto_pick_var,
+            command=lambda: (self.parent.update_param("auto_pick_enabled", self.auto_pick_var.get()), self.toggle_pick()),
             bootstyle="info-round-toggle"
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        ).grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
         
-        # ROW 2-4: Pick buttons
-        ttk.Label(frame, text="Pick 1 :").grid(row=2, column=0, sticky="e", padx=5, pady=3)
-        self.btn_pick_1 = ttk.Button(frame, text=params.get("selected_pick_1", "Garen"), bootstyle="secondary-outline")
-        self.btn_pick_1.grid(row=2, column=1, sticky="ew", padx=5, pady=3)
+        # Pick buttons (3 slots)
+        ttk.Label(self.main_frame, text="Pick 1 :").grid(row=start_row + 1, column=0, sticky="e", padx=5, pady=3)
+        self.btn_pick_1 = ttk.Button(self.main_frame, text=params.get("selected_pick_1", "Garen"), bootstyle="secondary-outline")
+        self.btn_pick_1.grid(row=start_row + 1, column=1, sticky="ew", padx=5, pady=3)
         self.btn_pick_1.configure(command=lambda: self._open_champion_picker("pick", 1))
         
-        ttk.Label(frame, text="Pick 2 :").grid(row=3, column=0, sticky="e", padx=5, pady=3)
-        self.btn_pick_2 = ttk.Button(frame, text=params.get("selected_pick_2", "Lux"), bootstyle="secondary-outline")
-        self.btn_pick_2.grid(row=3, column=1, sticky="ew", padx=5, pady=3)
+        ttk.Label(self.main_frame, text="Pick 2 :").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=3)
+        self.btn_pick_2 = ttk.Button(self.main_frame, text=params.get("selected_pick_2", "Lux"), bootstyle="secondary-outline")
+        self.btn_pick_2.grid(row=start_row + 2, column=1, sticky="ew", padx=5, pady=3)
         self.btn_pick_2.configure(command=lambda: self._open_champion_picker("pick", 2))
         
-        ttk.Label(frame, text="Pick 3 :").grid(row=4, column=0, sticky="e", padx=5, pady=3)
-        self.btn_pick_3 = ttk.Button(frame, text=params.get("selected_pick_3", "Ashe"), bootstyle="secondary-outline")
-        self.btn_pick_3.grid(row=4, column=1, sticky="ew", padx=5, pady=3)
+        ttk.Label(self.main_frame, text="Pick 3 :").grid(row=start_row + 3, column=0, sticky="e", padx=5, pady=3)
+        self.btn_pick_3 = ttk.Button(self.main_frame, text=params.get("selected_pick_3", "Ashe"), bootstyle="secondary-outline")
+        self.btn_pick_3.grid(row=start_row + 3, column=1, sticky="ew", padx=5, pady=3)
         self.btn_pick_3.configure(command=lambda: self._open_champion_picker("pick", 3))
         
-        # ROW 5: Auto Ban Toggle
-        ttk.Checkbutton(
-            frame, text="Bannir un Champion", 
-            variable=self.ban_var,
-            command=lambda: (self.parent.update_param("auto_ban_enabled", self.ban_var.get()), self.toggle_ban()),
-            bootstyle="danger-round-toggle"
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        return start_row + 4
+    
+    def _create_ban_section(self, start_row: int) -> int:
+        """Crée la section Auto-Ban."""
+        params = self.parent.get_params()
         
-        # ROW 6: Ban Button
-        ttk.Label(frame, text="Bannir :").grid(row=6, column=0, sticky="e", padx=5)
-        self.btn_ban = ttk.Button(frame, text=params.get("selected_ban", "Teemo"), bootstyle="secondary-outline")
-        self.btn_ban.grid(row=6, column=1, sticky="ew", padx=5)
+        # Toggle Auto Ban
+        ttk.Checkbutton(
+            self.main_frame, text="Bannir un Champion", 
+            variable=self.auto_ban_var,
+            command=lambda: (self.parent.update_param("auto_ban_enabled", self.auto_ban_var.get()), self.toggle_ban()),
+            bootstyle="danger-round-toggle"
+        ).grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        
+        # Ban button
+        ttk.Label(self.main_frame, text="Bannir :").grid(row=start_row + 1, column=0, sticky="e", padx=5)
+        self.btn_ban = ttk.Button(self.main_frame, text=params.get("selected_ban", "Teemo"), bootstyle="secondary-outline")
+        self.btn_ban.grid(row=start_row + 1, column=1, sticky="ew", padx=5)
         self.btn_ban.configure(command=lambda: self._open_champion_picker("ban"))
         
-        # ROW 7: Auto Spells Toggle
-        ttk.Checkbutton(
-            frame, text="Configurer Sorts", 
-            variable=self.summ_var,
-            command=lambda: (self.parent.update_param("auto_summoners_enabled", self.summ_var.get()), self.toggle_spells()),
-            bootstyle="warning-round-toggle"
-        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        return start_row + 2
+    
+    def _create_spells_section(self, start_row: int) -> int:
+        """Crée la section Auto-Spells."""
+        params = self.parent.get_params()
         
-        # ROW 8-9: Spell Buttons
-        ttk.Label(frame, text="Sort 1 :").grid(row=8, column=0, sticky="e", padx=5, pady=3)
-        self.btn_spell_1 = ttk.Button(frame, text=params.get("global_spell_1", "Heal"), bootstyle="secondary-outline")
-        self.btn_spell_1.grid(row=8, column=1, sticky="ew", padx=5, pady=3)
+        # Toggle Auto Spells
+        ttk.Checkbutton(
+            self.main_frame, text="Configurer Sorts", 
+            variable=self.auto_summoners_var,
+            command=lambda: (self.parent.update_param("auto_summoners_enabled", self.auto_summoners_var.get()), self.toggle_spells()),
+            bootstyle="warning-round-toggle"
+        ).grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        
+        # Spell buttons
+        ttk.Label(self.main_frame, text="Sort 1 :").grid(row=start_row + 1, column=0, sticky="e", padx=5, pady=3)
+        self.btn_spell_1 = ttk.Button(self.main_frame, text=params.get("global_spell_1", "Heal"), bootstyle="secondary-outline")
+        self.btn_spell_1.grid(row=start_row + 1, column=1, sticky="ew", padx=5, pady=3)
         self.btn_spell_1.configure(command=lambda: self._open_spell_picker(1))
         
-        ttk.Label(frame, text="Sort 2 :").grid(row=9, column=0, sticky="e", padx=5, pady=3)
-        self.btn_spell_2 = ttk.Button(frame, text=params.get("global_spell_2", "Flash"), bootstyle="secondary-outline")
-        self.btn_spell_2.grid(row=9, column=1, sticky="ew", padx=5, pady=3)
+        ttk.Label(self.main_frame, text="Sort 2 :").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=3)
+        self.btn_spell_2 = ttk.Button(self.main_frame, text=params.get("global_spell_2", "Flash"), bootstyle="secondary-outline")
+        self.btn_spell_2.grid(row=start_row + 2, column=1, sticky="ew", padx=5, pady=3)
         self.btn_spell_2.configure(command=lambda: self._open_spell_picker(2))
         
-        # ROW 10: Auto Detect Toggle
-        detect_frame = ttk.Frame(frame)
-        detect_frame.grid(row=10, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        return start_row + 3
+    
+    def _create_summoner_detection_section(self, start_row: int) -> int:
+        """Crée la section de détection du pseudo/région."""
+        params = self.parent.get_params()
+        
+        # Toggle Auto Detect
+        detect_frame = ttk.Frame(self.main_frame)
+        detect_frame.grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
         
         def on_auto_toggle():
             self.toggle_summoner_entry()
-            if self.summ_auto_var.get():
+            if self.summoner_auto_detect_var.get():
                 self.parent.force_refresh_summoner()
             self._update_detect_label_text()
         
         self.switch_auto = ttk.Checkbutton(
-            detect_frame, variable=self.summ_auto_var,
+            detect_frame, variable=self.summoner_auto_detect_var,
             command=on_auto_toggle, bootstyle="round-toggle"
         )
         self.switch_auto.pack(side="left", padx=(0, 10))
@@ -172,24 +260,28 @@ class SettingsWindow:
         self.lbl_auto_detect = ttk.Label(detect_frame, text="Détection auto du compte")
         self.lbl_auto_detect.pack(side="left")
         
-        # ROW 11: Summoner Entry
-        ttk.Label(frame, text="Pseudo :", anchor="w").grid(row=11, column=0, sticky="e", padx=5, pady=5)
-        self.summ_entry = ttk.Entry(frame, textvariable=self.summ_entry_var, state="readonly")
-        self.summ_entry.grid(row=11, column=1, sticky="ew", padx=5)
+        # Summoner Entry
+        ttk.Label(self.main_frame, text="Pseudo :", anchor="w").grid(row=start_row + 1, column=0, sticky="e", padx=5, pady=5)
+        self.summ_entry = ttk.Entry(self.main_frame, textvariable=self.summoner_entry_var, state="readonly")
+        self.summ_entry.grid(row=start_row + 1, column=1, sticky="ew", padx=5)
         
-        # ROW 12: Region
-        ttk.Label(frame, text="Région :", anchor="w").grid(row=12, column=0, sticky="e", padx=5, pady=5)
+        # Region
+        ttk.Label(self.main_frame, text="Région :", anchor="w").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=5)
         self.region_var = tk.StringVar(value=params.get("region", "euw"))
-        self.region_cb = ttk.Combobox(frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
-        self.region_cb.grid(row=12, column=1, sticky="ew", padx=5)
+        self.region_cb = ttk.Combobox(self.main_frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
+        self.region_cb.grid(row=start_row + 2, column=1, sticky="ew", padx=5)
         self.region_cb.bind("<<ComboboxSelected>>", lambda e: self.parent.update_param("region", self.region_var.get()))
         
-        # ROW 13: Separator
-        ttk.Separator(frame).grid(row=13, column=0, columnspan=2, sticky="we", pady=(15, 10))
+        return start_row + 3
+    
+    def _create_misc_section(self, start_row: int) -> int:
+        """Crée la section des options diverses."""
+        # Separator
+        ttk.Separator(self.main_frame).grid(row=start_row, column=0, columnspan=2, sticky="we", pady=(15, 10))
         
-        # ROW 14: Misc Options
-        misc_frame = ttk.Frame(frame)
-        misc_frame.grid(row=14, column=0, columnspan=2, sticky="w")
+        # Misc Options Frame
+        misc_frame = ttk.Frame(self.main_frame)
+        misc_frame.grid(row=start_row + 1, column=0, columnspan=2, sticky="w")
         
         ttk.Checkbutton(
             misc_frame, text="Retour au salon automatique a la fin de la partie", 
@@ -212,18 +304,12 @@ class SettingsWindow:
             bootstyle="danger-round-toggle"
         ).pack(anchor="w", pady=2)
         
-        # Close Button
-        ttk.Button(
-            self.window, text="Fermer", command=self.on_close, bootstyle="primary"
-        ).pack(pady=(0, 20), side="bottom")
+        return start_row + 2
+    
+    def _load_initial_icons(self) -> None:
+        """Charge les icônes initiales dans tous les boutons."""
+        params = self.parent.get_params()
         
-        # Initialize states
-        self.toggle_pick()
-        self.toggle_ban()
-        self.toggle_spells()
-        self.toggle_summoner_entry()
-        
-        # Load icons into buttons
         self._update_btn_content(self.btn_ban, params.get("selected_ban", ""), is_champ=True)
         self._update_btn_content(self.btn_pick_1, params.get("selected_pick_1", ""), is_champ=True)
         self._update_btn_content(self.btn_pick_2, params.get("selected_pick_2", ""), is_champ=True)
@@ -257,16 +343,18 @@ class SettingsWindow:
         params = self.parent.get_params()
         excluded = set()
         if context == "pick":
-            p1, p2, p3 = params.get("selected_pick_1"), params.get("selected_pick_2"), params.get("selected_pick_3")
+            pick_1 = params.get("selected_pick_1")
+            pick_2 = params.get("selected_pick_2")
+            pick_3 = params.get("selected_pick_3")
             banned = params.get("selected_ban")
             if banned:
                 excluded.add(banned)
             if slot_num == 1:
-                excluded.update({p2, p3})
+                excluded.update({pick_2, pick_3})
             elif slot_num == 2:
-                excluded.update({p1, p3})
+                excluded.update({pick_1, pick_3})
             elif slot_num == 3:
-                excluded.update({p1, p2})
+                excluded.update({pick_1, pick_2})
         
         valid_champs = [c for c in self.all_champions if c not in excluded]
         
@@ -310,7 +398,7 @@ class SettingsWindow:
     
     def _open_spell_picker(self, spell_slot_num: int) -> None:
         """Ouvre le sélecteur de sort."""
-        if not self.summ_var.get():
+        if not self.auto_summoners_var.get():
             return
         
         picker = ttk.Toplevel(self.window)
@@ -343,9 +431,9 @@ class SettingsWindow:
         
         row, col = 0, 0
         for spell in self.spell_list:
-            f = ttk.Frame(container)
-            f.grid(row=row, column=col, padx=5, pady=5)
-            btn = ttk.Button(f, bootstyle="link", command=lambda s=spell: on_pick(s))
+            spell_frame = ttk.Frame(container)
+            spell_frame.grid(row=row, column=col, padx=5, pady=5)
+            btn = ttk.Button(spell_frame, bootstyle="link", command=lambda s=spell: on_pick(s))
             btn.pack()
             self._load_img_into_btn(btn, spell, False)
             col += 1
@@ -354,60 +442,66 @@ class SettingsWindow:
                 row += 1
     
     def _update_btn_content(self, btn_widget: ttk.Button, name: str, is_champ: bool = True) -> None:
-        """Met à jour le contenu d'un bouton avec icône (thread-safe)."""
+        """Met à jour le contenu d'un bouton avec icône (thread-safe via ThreadPoolExecutor)."""
         if not name:
             name = "..."
         
         def task():
-            if is_champ:
-                img = self.parent.dd.get_champion_icon(name)
-            else:
-                img = self.parent.dd.get_summoner_icon(name)
-            
-            if img:
-                img = img.resize((30, 30), Image.LANCZOS)
-                photo = ImageTk.PhotoImage(img)
+            try:
+                if is_champ:
+                    img = self.parent.dd.get_champion_icon(name)
+                else:
+                    img = self.parent.dd.get_summoner_icon(name)
                 
-                def ui():
-                    if btn_widget.winfo_exists():
-                        btn_widget.configure(image=photo, text=f"  {name}", compound="left")
-                        btn_widget.image = photo
-                
-                btn_widget.after(0, ui)
-            else:
-                def ui_c():
-                    if btn_widget.winfo_exists():
-                        btn_widget.configure(image='', text=f"  {name}", compound="left")
-                btn_widget.after(0, ui_c)
+                if img:
+                    img = img.resize((30, 30), Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(img)
+                    
+                    def update_ui():
+                        if btn_widget.winfo_exists():
+                            btn_widget.configure(image=photo, text=f"  {name}", compound="left")
+                            btn_widget.image = photo
+                    
+                    btn_widget.after(0, update_ui)
+                else:
+                    def update_ui_no_img():
+                        if btn_widget.winfo_exists():
+                            btn_widget.configure(image='', text=f"  {name}", compound="left")
+                    btn_widget.after(0, update_ui_no_img)
+            except Exception as e:
+                logging.debug(f"Erreur chargement icône pour {name}: {e}")
         
-        Thread(target=task, daemon=True).start()
+        self.parent.executor.submit(task)
     
     def _load_img_into_btn(self, btn_widget: ttk.Button, name: str, is_champ: bool = True) -> None:
-        """Charge une image dans un bouton (thread-safe)."""
+        """Charge une image dans un bouton (thread-safe via ThreadPoolExecutor)."""
         def task():
-            if is_champ:
-                img = self.parent.dd.get_champion_icon(name)
-            else:
-                img = self.parent.dd.get_summoner_icon(name)
-            
-            if img:
-                size = (40, 40) if is_champ else (48, 48)
-                img = img.resize(size, Image.LANCZOS)
-                photo = ImageTk.PhotoImage(img)
+            try:
+                if is_champ:
+                    img = self.parent.dd.get_champion_icon(name)
+                else:
+                    img = self.parent.dd.get_summoner_icon(name)
                 
-                def ui():
-                    if btn_widget.winfo_exists():
-                        btn_widget.configure(image=photo)
-                        btn_widget.image = photo
-                
-                btn_widget.after(0, ui)
+                if img:
+                    size = (40, 40) if is_champ else (48, 48)
+                    img = img.resize(size, Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(img)
+                    
+                    def update_ui():
+                        if btn_widget.winfo_exists():
+                            btn_widget.configure(image=photo)
+                            btn_widget.image = photo
+                    
+                    btn_widget.after(0, update_ui)
+            except Exception as e:
+                logging.debug(f"Erreur chargement image pour {name}: {e}")
         
-        Thread(target=task, daemon=True).start()
+        self.parent.executor.submit(task)
     
     def toggle_summoner_entry(self) -> None:
         """Bascule l'état de l'entrée pseudo selon la détection auto."""
-        if self.summ_auto_var.get():
-            current_entry = self.summ_entry_var.get()
+        if self.summoner_auto_detect_var.get():
+            current_entry = self.summoner_entry_var.get()
             current_auto = self.parent.get_auto_summoner_name()
             if current_entry != current_auto and current_entry != "(détection auto...)":
                 self.saved_manual_name = current_entry
@@ -417,7 +511,7 @@ class SettingsWindow:
             
             self.parent.force_refresh_summoner()
             auto_name = self.parent.get_auto_summoner_name()
-            self.summ_entry_var.set(auto_name if auto_name else "(détection auto...)")
+            self.summoner_entry_var.set(auto_name if auto_name else "(détection auto...)")
             
             auto_reg = self.parent.get_platform_for_websites()
             self.region_var.set(auto_reg)
@@ -425,27 +519,27 @@ class SettingsWindow:
         else:
             self.summ_entry.configure(state="normal")
             self.region_cb.configure(state="readonly")
-            self.summ_entry_var.set(self.saved_manual_name)
+            self.summoner_entry_var.set(self.saved_manual_name)
             self.region_var.set(self.parent.get_params().get("region", "euw"))
         
         self._update_detect_label_text()
     
     def toggle_pick(self) -> None:
         """Active/désactive les boutons de pick."""
-        st = "normal" if self.pick_var.get() else "disabled"
-        self.btn_pick_1.configure(state=st)
-        self.btn_pick_2.configure(state=st)
-        self.btn_pick_3.configure(state=st)
+        state = "normal" if self.auto_pick_var.get() else "disabled"
+        self.btn_pick_1.configure(state=state)
+        self.btn_pick_2.configure(state=state)
+        self.btn_pick_3.configure(state=state)
     
     def toggle_ban(self) -> None:
         """Active/désactive le bouton de ban."""
-        self.btn_ban.configure(state="normal" if self.ban_var.get() else "disabled")
+        self.btn_ban.configure(state="normal" if self.auto_ban_var.get() else "disabled")
     
     def toggle_spells(self) -> None:
         """Active/désactive les boutons de sorts."""
-        st = "normal" if self.summ_var.get() else "disabled"
-        self.btn_spell_1.configure(state=st)
-        self.btn_spell_2.configure(state=st)
+        state = "normal" if self.auto_summoners_var.get() else "disabled"
+        self.btn_spell_1.configure(state=state)
+        self.btn_spell_2.configure(state=state)
     
     def _update_detect_label_text(self) -> None:
         """Met à jour le label de détection auto."""
@@ -463,27 +557,27 @@ class SettingsWindow:
         
         self._update_detect_label_text()
         
-        if self.summ_auto_var.get():
+        if self.summoner_auto_detect_var.get():
             curr = self.parent.get_auto_summoner_name() or "(détection auto...)"
-            if self.summ_entry_var.get() != curr:
-                self.summ_entry_var.set(curr)
+            if self.summoner_entry_var.get() != curr:
+                self.summoner_entry_var.set(curr)
             areg = self.parent.get_platform_for_websites()
             if self.region_var.get() != areg:
                 self.region_var.set(areg)
                 self.parent.update_param("region", areg)
         
-        if not self.summ_auto_var.get():
-            self.saved_manual_name = self.summ_entry_var.get()
+        if not self.summoner_auto_detect_var.get():
+            self.saved_manual_name = self.summoner_entry_var.get()
         
         self.window.after(1000, self._poll_summoner_label)
     
     def on_close(self) -> None:
         """Ferme la fenêtre et sauvegarde les paramètres."""
-        self.parent.update_param("auto_summoners_enabled", self.summ_var.get())
-        self.parent.update_param("summoner_name_auto_detect", self.summ_auto_var.get())
+        self.parent.update_param("auto_summoners_enabled", self.auto_summoners_var.get())
+        self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())
         
-        if not self.summ_auto_var.get():
-            self.parent.update_param("manual_summoner_name", self.summ_entry_var.get())
+        if not self.summoner_auto_detect_var.get():
+            self.parent.update_param("manual_summoner_name", self.summoner_entry_var.get())
             self.parent.update_param("region", self.region_var.get())
         
         self.parent.update_param("auto_play_again_enabled", self.play_again_var.get())
@@ -499,6 +593,9 @@ class SettingsWindow:
 
 class LoLAssistantUI:
     """Interface graphique principale de MAIN LOL."""
+    
+    # ThreadPoolExecutor partagé pour le chargement des icônes
+    MAX_WORKERS = 4
     
     def __init__(
         self, 
@@ -531,12 +628,11 @@ class LoLAssistantUI:
         self.settings_win: Optional[SettingsWindow] = None
         self.ws_manager = None  # Sera défini par main.py
         
+        # ThreadPoolExecutor pour le chargement des icônes
+        self.executor = ThreadPoolExecutor(max_workers=self.MAX_WORKERS)
+        
         # Initialiser le son
-        try:
-            pygame.mixer.init()
-            self.sound_effect = pygame.mixer.Sound(resource_path("config/son.wav"))
-        except Exception:
-            self.sound_effect = None
+        self._init_sound()
         
         # Créer la fenêtre
         self.theme = params.get("theme", "darkly")
@@ -547,9 +643,24 @@ class LoLAssistantUI:
         
         self.theme_var = tk.StringVar(value=self.theme)
         
+        # Références aux widgets (initialisées dans create_ui)
+        self.bg_label: Optional[tk.Label] = None
+        self.banner_label: Optional[ttk.Label] = None
+        self.connection_indicator: Optional[tk.Canvas] = None
+        self.status_label: Optional[ttk.Label] = None
+        
         self.create_ui()
         self.create_system_tray()
         self.setup_hotkeys()
+    
+    def _init_sound(self) -> None:
+        """Initialise le système de son."""
+        try:
+            pygame.mixer.init()
+            self.sound_effect = pygame.mixer.Sound(resource_path("config/son.wav"))
+        except Exception as e:
+            logging.debug(f"Impossible d'initialiser le son: {e}")
+            self.sound_effect = None
     
     def set_ws_manager(self, ws_manager) -> None:
         """Définit le gestionnaire WebSocket."""
@@ -588,13 +699,32 @@ class LoLAssistantUI:
             self.ws_manager.force_refresh_summoner()
     
     def create_ui(self) -> None:
-        """Crée tous les widgets de l'interface."""
-        # Style configuration
+        """Crée tous les widgets de l'interface (méthode principale)."""
+        self._configure_styles()
+        self._create_background()
+        self._create_banner()
+        self._create_connection_indicator()
+        self._create_status_label()
+        self._create_settings_gear()
+        self._create_opgg_button()
+        
+        # Window protocol
+        self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
+    
+    def _configure_styles(self) -> None:
+        """Configure les styles de l'interface."""
         style = ttk.Style()
         style.configure(".", font=("Segoe UI Emoji", 10))
         style.configure("Status.TLabel", font=("Segoe UI Emoji", 11), background=self.root['bg'])
-        
-        # Load images
+    
+    def _create_background(self) -> None:
+        """Crée le label de fond."""
+        self.bg_label = tk.Label(self.root, bg="#2b2b2b")
+        self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+        self.bg_label.lower()
+    
+    def _create_banner(self) -> None:
+        """Crée la bannière avec l'icône."""
         try:
             garen_icon = ImageTk.PhotoImage(
                 Image.open(resource_path("./config/imgs/garen.webp")).resize((32, 32))
@@ -603,36 +733,30 @@ class LoLAssistantUI:
             banner_img = ImageTk.PhotoImage(
                 Image.open(resource_path("./config/imgs/garen.webp")).resize((48, 48))
             )
-        except Exception:
-            garen_icon = None
-            banner_img = None
-        
-        # Background label
-        self.bg_label = tk.Label(self.root, bg="#2b2b2b")
-        self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-        self.bg_label.lower()
-        
-        # Banner
-        if banner_img:
             self.banner_label = ttk.Label(self.root, image=banner_img)
             self.banner_label.image = banner_img
             self.banner_label.place(relx=0.5, rely=0.08, anchor="n")
-        
-        # Connection indicator
+        except Exception as e:
+            logging.debug(f"Impossible de charger les images de bannière: {e}")
+    
+    def _create_connection_indicator(self) -> None:
+        """Crée l'indicateur de connexion."""
         self.connection_indicator = tk.Canvas(
             self.root, width=12, height=12, bd=0, highlightthickness=0, bg="#2b2b2b"
         )
         self.connection_indicator.place(relx=0.05, rely=0.05, anchor="nw")
         self.update_connection_indicator(False)
-        
-        # Status label
+    
+    def _create_status_label(self) -> None:
+        """Crée le label de statut."""
         self.status_label = ttk.Label(
             self.root, text="En attente du lancement de League of Legends...",
             style="Status.TLabel", justify="center", wraplength=380
         )
         self.status_label.place(relx=0.5, rely=0.38, anchor="center")
-        
-        # Settings gear
+    
+    def _create_settings_gear(self) -> None:
+        """Crée le bouton de paramètres (engrenage)."""
         gear_path = resource_path("./config/imgs/gear.png")
         if os.path.exists(gear_path):
             try:
@@ -641,23 +765,25 @@ class LoLAssistantUI:
                 cog.image = gear_img
                 cog.place(relx=0.95, rely=0.05, anchor="ne")
                 cog.bind("<Button-1>", lambda e: self.open_settings())
-            except Exception:
-                cog = ttk.Button(self.root, text="⚙", command=self.open_settings, bootstyle="link")
-                cog.place(relx=0.95, rely=0.05, anchor="ne")
+            except Exception as e:
+                logging.debug(f"Impossible de charger l'icône engrenage: {e}")
+                self._create_fallback_gear()
         else:
-            cog = ttk.Button(self.root, text="⚙", command=self.open_settings, bootstyle="link")
-            cog.place(relx=0.95, rely=0.05, anchor="ne")
-        
-        # OP.GG Button
+            self._create_fallback_gear()
+    
+    def _create_fallback_gear(self) -> None:
+        """Crée un bouton engrenage de secours (texte)."""
+        cog = ttk.Button(self.root, text="⚙", command=self.open_settings, bootstyle="link")
+        cog.place(relx=0.95, rely=0.05, anchor="ne")
+    
+    def _create_opgg_button(self) -> None:
+        """Crée le bouton OP.GG."""
         opgg_btn = ttk.Button(
             self.root, text="Voir mes stats (OP.GG)",
             bootstyle="success-outline", padding=(20, 10), width=22,
             command=lambda: webbrowser.open(self.build_opgg_url())
         )
         opgg_btn.place(relx=0.5, rely=0.75, anchor="center")
-        
-        # Window protocol
-        self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
     
     def build_opgg_url(self) -> str:
         """Construit l'URL OP.GG."""
@@ -682,7 +808,7 @@ class LoLAssistantUI:
     
     def set_background_splash(self, champion_name: str) -> None:
         """Met le splash art d'un champion en arrière-plan."""
-        def _task():
+        def task():
             try:
                 img = self.dd.get_splash_art(champion_name)
                 if not img:
@@ -715,17 +841,17 @@ class LoLAssistantUI:
                 
                 tk_img = ImageTk.PhotoImage(img)
                 
-                def _update_ui():
-                    if self.root.winfo_exists():
+                def update_ui():
+                    if self.root.winfo_exists() and self.bg_label:
                         self.bg_label.configure(image=tk_img)
                         self.bg_label.image = tk_img
                 
-                self.root.after(0, _update_ui)
+                self.root.after(0, update_ui)
                 
             except Exception as e:
-                print(f"Erreur Splash Art: {e}")
+                logging.warning(f"Erreur Splash Art pour {champion_name}: {e}")
         
-        Thread(target=_task, daemon=True).start()
+        self.executor.submit(task)
     
     def create_system_tray(self) -> None:
         """Crée l'icône du system tray."""
@@ -736,17 +862,24 @@ class LoLAssistantUI:
                 pystray.MenuItem("Quitter", self._quit_callback)
             )
             self.icon = pystray.Icon("MAIN LOL", image, "MAIN LOL", menu)
-            Thread(target=self.icon.run, daemon=True).start()
-        except Exception:
-            pass
+            
+            def run_tray():
+                try:
+                    self.icon.run()
+                except Exception as e:
+                    logging.debug(f"Erreur system tray: {e}")
+            
+            self.executor.submit(run_tray)
+        except Exception as e:
+            logging.warning(f"Impossible de créer le system tray: {e}")
     
     def setup_hotkeys(self) -> None:
         """Configure les raccourcis clavier."""
         try:
             keyboard.add_hotkey('alt+p', self.open_porofessor)
             keyboard.add_hotkey('alt+c', self.toggle_window)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Impossible de configurer les hotkeys: {e}")
     
     def open_porofessor(self) -> None:
         """Ouvre Porofessor dans le navigateur."""
@@ -790,7 +923,10 @@ class LoLAssistantUI:
     
     def update_connection_indicator(self, connected: bool) -> None:
         """Met à jour l'indicateur de connexion (thread-safe)."""
-        def _draw():
+        def draw():
+            if not self.connection_indicator or not self.connection_indicator.winfo_exists():
+                return
+            
             self.connection_indicator.delete("all")
             color = "#00ff00" if connected else "#ff0000"
             self.connection_indicator.create_oval(2, 2, 10, 10, fill=color, outline="")
@@ -799,9 +935,9 @@ class LoLAssistantUI:
                 def pulse(step=0):
                     if not self.connection_indicator.winfo_exists():
                         return
-                    r = 4 + int(2 * abs((step % 20) - 10) / 10)
+                    radius = 4 + int(2 * abs((step % 20) - 10) / 10)
                     self.connection_indicator.delete("all")
-                    self.connection_indicator.create_oval(6 - r, 6 - r, 6 + r, 6 + r, fill=color, outline="")
+                    self.connection_indicator.create_oval(6 - radius, 6 - radius, 6 + radius, 6 + radius, fill=color, outline="")
                     if self.running and self.is_ws_active():
                         self.connection_indicator.after(50, lambda: pulse(step + 1))
                     elif self.connection_indicator.winfo_exists():
@@ -809,7 +945,7 @@ class LoLAssistantUI:
                         self.connection_indicator.create_oval(2, 2, 10, 10, fill="#ff0000", outline="")
                 pulse()
         
-        self.root.after(0, _draw)
+        self.root.after(0, draw)
     
     def show_toast(self, message: str, duration: int = 2000) -> None:
         """Affiche une notification toast."""
@@ -820,8 +956,8 @@ class LoLAssistantUI:
             )
             toast.place(relx=0.5, rely=0.98, anchor="s")
             self.root.after(duration, toast.destroy)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Erreur affichage toast: {e}")
     
     def show_update_popup(self, new_version: str) -> None:
         """Affiche la popup de mise à jour."""
@@ -846,8 +982,8 @@ class LoLAssistantUI:
                 photo = ImageTk.PhotoImage(img)
                 popup.iconphoto(False, photo)
                 popup._icon_ref = photo
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Erreur icône popup update: {e}")
         
         # Title
         title_lbl = ttk.Label(
@@ -929,9 +1065,18 @@ class LoLAssistantUI:
     def stop(self) -> None:
         """Arrête l'interface."""
         self.running = False
+        
+        # Arrêter le ThreadPoolExecutor
+        try:
+            self.executor.shutdown(wait=False)
+        except Exception as e:
+            logging.debug(f"Erreur arrêt executor: {e}")
+        
+        # Arrêter le system tray
         try:
             if hasattr(self, 'icon'):
                 self.icon.stop()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Erreur arrêt tray icon: {e}")
+        
         self.root.quit()

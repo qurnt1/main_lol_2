@@ -1,7 +1,11 @@
 """
-MAIN LOL - Point d'Entrée
--------------------------
+MAIN LOL - Point d'Entrée (Refactorisé v6.1)
+---------------------------------------------
 Initialise l'application, gère les threads et la fermeture propre.
+
+Améliorations v6.1:
+- Chargement asynchrone de DataDragon (ne bloque plus l'UI)
+- Meilleure gestion des erreurs avec logging
 """
 
 import sys
@@ -19,12 +23,16 @@ from src.core import DataDragon, WebSocketManager
 from src.ui import LoLAssistantUI
 
 
-
 class MainLoLApplication:
     """Classe principale gérant le cycle de vie de l'application."""
     
     def __init__(self):
-        """Initialise l'application MAIN LOL."""
+        """
+        Initialise l'application MAIN LOL.
+        
+        v6.1: DataDragon est maintenant chargé de manière asynchrone
+        pour éviter de bloquer l'interface utilisateur au démarrage.
+        """
         # Activer High DPI
         enable_high_dpi()
         
@@ -39,12 +47,12 @@ class MainLoLApplication:
         # Créer les dossiers de cache
         get_cache_dirs()
         
-        # Initialiser DataDragon
-        logging.info("Chargement de DataDragon...")
+        # Initialiser DataDragon (NE PAS CHARGER ICI - fait en async)
+        logging.info("Initialisation de DataDragon...")
         self.dd = DataDragon()
-        self.dd.load()
+        # Note: dd.load() sera appelé en arrière-plan
         
-        # Créer l'interface
+        # Créer l'interface AVANT de charger DataDragon
         logging.info("Création de l'interface...")
         self.ui = LoLAssistantUI(
             dd=self.dd,
@@ -66,11 +74,44 @@ class MainLoLApplication:
         # Connecter le WS à l'UI
         self.ui.set_ws_manager(self.ws_manager)
         
+        # Charger DataDragon en arrière-plan (v6.1)
+        self._load_datadragon_async()
+        
         # Vérifier les mises à jour en arrière-plan
         self._check_updates_async()
         
         # Démarrer le WebSocket
         self.ws_manager.start()
+    
+    def _load_datadragon_async(self) -> None:
+        """
+        Charge DataDragon en arrière-plan pour ne pas bloquer l'UI.
+        
+        Une fois chargé, affiche un toast de confirmation.
+        """
+        def load_task():
+            try:
+                logging.info("Chargement de DataDragon en arrière-plan...")
+                self.dd.load()
+                
+                # Notifier l'UI que le chargement est terminé
+                champion_count = len(self.dd.all_names)
+                if champion_count > 0:
+                    message = f"Champions chargés ({champion_count})"
+                    self.ui.root.after(0, lambda: self.ui.show_toast(message, duration=1500))
+                    logging.info(f"DataDragon chargé: {champion_count} champions")
+                else:
+                    logging.warning("DataDragon chargé mais sans champions")
+                    
+            except Exception as e:
+                logging.error(f"Erreur lors du chargement de DataDragon: {e}")
+                self.ui.root.after(0, lambda: self.ui.show_toast("Erreur chargement champions", duration=3000))
+        
+        # Utiliser le ThreadPoolExecutor de l'UI si disponible
+        if hasattr(self.ui, 'executor'):
+            self.ui.executor.submit(load_task)
+        else:
+            Thread(target=load_task, daemon=True).start()
     
     def _get_params(self) -> Dict[str, Any]:
         """Retourne les paramètres actuels."""
@@ -89,16 +130,23 @@ class MainLoLApplication:
     
     def _check_updates_async(self) -> None:
         """Vérifie les mises à jour en arrière-plan."""
-        def _check():
-            new_version = check_for_updates()
-            if new_version:
-                logging.info(f"Nouvelle version disponible: {new_version}")
-                # Planifier l'affichage du popup sur le thread UI
-                self.ui.root.after(0, lambda: self.ui.show_update_popup(new_version))
-            else:
-                logging.info("Application à jour.")
+        def check_task():
+            try:
+                new_version = check_for_updates()
+                if new_version:
+                    logging.info(f"Nouvelle version disponible: {new_version}")
+                    # Planifier l'affichage du popup sur le thread UI
+                    self.ui.root.after(0, lambda: self.ui.show_update_popup(new_version))
+                else:
+                    logging.info("Application à jour.")
+            except Exception as e:
+                logging.warning(f"Erreur lors de la vérification des mises à jour: {e}")
         
-        Thread(target=_check, daemon=True).start()
+        # Utiliser le ThreadPoolExecutor de l'UI si disponible
+        if hasattr(self.ui, 'executor'):
+            self.ui.executor.submit(check_task)
+        else:
+            Thread(target=check_task, daemon=True).start()
     
     def run(self) -> None:
         """Lance la boucle principale de l'application."""

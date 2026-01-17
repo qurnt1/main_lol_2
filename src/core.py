@@ -101,66 +101,111 @@ class DataDragon:
             logging.warning(f"DataDragon: Erreur sauvegarde cache - {e}")
     
     def load(self) -> None:
-        """Charge les données des champions depuis Data Dragon."""
+        """
+        Charge les données des champions depuis Data Dragon.
+        
+        Optimisé v6.1: évite les appels API dupliqués.
+        """
         if self.loaded:
             return
         
         get_cache_dirs()  # S'assurer que les dossiers de cache existent
         
-        online_version = None
-        try:
-            versions = requests.get(URL_DD_VERSIONS, timeout=5).json()
-            online_version = versions[0]
-        except Exception:
-            pass
+        # Récupérer la version en ligne (une seule fois)
+        online_version = self._fetch_latest_version()
         
+        # Essayer de charger depuis le cache si la version correspond
         if self._load_from_cache(target_version=online_version):
+            logging.info(f"DataDragon: Chargé depuis cache (version {self.version})")
             return
         
+        # Impossible de continuer sans version et sans cache valide
+        if not online_version:
+            logging.warning("DataDragon: Pas de version en ligne et cache invalide, utilisation du fallback")
+            self._load_fallback_data()
+            return
+        
+        # Télécharger les données des champions
         try:
-            if not online_version:
-                versions = requests.get(URL_DD_VERSIONS, timeout=5).json()
-                online_version = versions[0]
-            
             url_champs = URL_DD_CHAMPIONS.format(version=online_version)
-            data = requests.get(url_champs, timeout=10).json()
-            champs = data.get("data", {})
+            response = requests.get(url_champs, timeout=10)
+            response.raise_for_status()
+            champions_data = response.json().get("data", {})
             
             self.by_id = {}
             self.name_by_id = {}
             self.by_norm_name = {}
             
-            for champ_slug, info in champs.items():
+            for champ_slug, info in champions_data.items():
                 champ_name = info.get("name") or champ_slug
-                champ_id = int(info.get("key"))
-                self.by_id[champ_id] = info
-                self.name_by_id[champ_id] = champ_name
-                self.by_norm_name[self._normalize(champ_name)] = champ_id
-                self.by_norm_name[self._normalize(info.get("id", champ_slug))] = champ_id
+                champion_id = int(info.get("key"))
+                self.by_id[champion_id] = info
+                self.name_by_id[champion_id] = champ_name
+                self.by_norm_name[self._normalize(champ_name)] = champion_id
+                self.by_norm_name[self._normalize(info.get("id", champ_slug))] = champion_id
             
             # Aliases pour champions avec noms alternatifs
-            aliases = {"wukong": "monkeyking", "renata": "renataglasc"}
-            for k, v in aliases.items():
-                nk, nv = self._normalize(k), self._normalize(v)
-                if nv in self.by_norm_name:
-                    self.by_norm_name[nk] = self.by_norm_name[nv]
+            self._add_champion_aliases()
             
             self.version = online_version
             self.all_names = sorted(list(self.name_by_id.values()))
             self.loaded = True
             self._save_cache()
+            logging.info(f"DataDragon: Chargé depuis API (version {online_version}, {len(self.all_names)} champions)")
             
+        except requests.RequestException as e:
+            logging.error(f"DataDragon: Erreur réseau lors du chargement - {e}")
+            self._load_fallback_data()
         except Exception as e:
-            logging.error(f"DataDragon: Erreur chargement - {e}")
-            # Fallback minimal
-            basic = {"garen": 86, "teemo": 17, "ashe": 22, "lux": 99}
-            for n, cid in basic.items():
-                self.by_norm_name[n] = cid
-                self.by_id[cid] = {"name": n.title(), "key": str(cid)}
-                self.name_by_id[cid] = n.title()
-            self.version = "offline"
-            self.all_names = sorted(list(self.name_by_id.values()))
-            self.loaded = True
+            logging.error(f"DataDragon: Erreur inattendue - {e}")
+            self._load_fallback_data()
+    
+    def _fetch_latest_version(self) -> Optional[str]:
+        """Récupère la dernière version de Data Dragon depuis l'API."""
+        try:
+            response = requests.get(URL_DD_VERSIONS, timeout=5)
+            response.raise_for_status()
+            versions = response.json()
+            if versions and len(versions) > 0:
+                return versions[0]
+        except requests.RequestException as e:
+            logging.warning(f"DataDragon: Impossible de récupérer la version en ligne - {e}")
+        except Exception as e:
+            logging.warning(f"DataDragon: Erreur parsing versions - {e}")
+        return None
+    
+    def _add_champion_aliases(self) -> None:
+        """Ajoute des alias pour les champions avec des noms alternatifs."""
+        aliases = {
+            "wukong": "monkeyking",
+            "renata": "renataglasc"
+        }
+        for alias_name, internal_name in aliases.items():
+            norm_alias = self._normalize(alias_name)
+            norm_internal = self._normalize(internal_name)
+            if norm_internal in self.by_norm_name:
+                self.by_norm_name[norm_alias] = self.by_norm_name[norm_internal]
+    
+    def _load_fallback_data(self) -> None:
+        """Charge des données minimales de fallback."""
+        logging.info("DataDragon: Chargement des données de fallback")
+        basic_champions = {
+            "Garen": 86,
+            "Teemo": 17,
+            "Ashe": 22,
+            "Lux": 99,
+            "Jinx": 222,
+            "Ahri": 103
+        }
+        for name, champion_id in basic_champions.items():
+            norm_name = self._normalize(name)
+            self.by_norm_name[norm_name] = champion_id
+            self.by_id[champion_id] = {"name": name, "key": str(champion_id)}
+            self.name_by_id[champion_id] = name
+        
+        self.version = "offline"
+        self.all_names = sorted(list(self.name_by_id.values()))
+        self.loaded = True
     
     def resolve_champion(self, name_or_id: Any) -> Optional[int]:
         """Résout un nom ou ID de champion vers son ID numérique."""
@@ -171,13 +216,13 @@ class DataDragon:
             return int(name_or_id)
         except (ValueError, TypeError):
             pass
-        n = self._normalize(str(name_or_id))
-        return self.by_norm_name.get(n)
+        normalized_name = self._normalize(str(name_or_id))
+        return self.by_norm_name.get(normalized_name)
     
-    def id_to_name(self, cid: int) -> Optional[str]:
+    def id_to_name(self, champion_id: int) -> Optional[str]:
         """Convertit un ID de champion vers son nom."""
         self.load()
-        return self.name_by_id.get(cid)
+        return self.name_by_id.get(champion_id)
     
     def get_champion_icon(self, name_or_id: Any) -> Optional[Image.Image]:
         """
@@ -189,17 +234,17 @@ class DataDragon:
         Returns:
             Image PIL ou None si non trouvée
         """
-        cid = self.resolve_champion(name_or_id)
-        if not cid:
+        champion_id = self.resolve_champion(name_or_id)
+        if not champion_id:
             return None
         
         # Vérifier le cache mémoire
-        cache_key = f"champ_{cid}"
+        cache_key = f"champ_{champion_id}"
         with self._cache_lock:
             if cache_key in self._image_cache:
                 return self._image_cache[cache_key].copy()
         
-        champ_data = self.by_id.get(cid)
+        champ_data = self.by_id.get(champion_id)
         if not champ_data:
             return None
         
@@ -215,17 +260,17 @@ class DataDragon:
                 with self._cache_lock:
                     self._image_cache[cache_key] = img.copy()
                 return img
-            except Exception:
-                pass
+            except Exception as e:
+                logging.debug(f"Erreur lecture cache icône {image_filename}: {e}")
         
         # Télécharger
         url = URL_DD_IMG_CHAMP.format(version=self.version, filename=image_filename)
         try:
-            r = requests.get(url, timeout=5)
-            if r.status_code == 200:
-                img = Image.open(BytesIO(r.content))
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                img = Image.open(BytesIO(response.content))
                 with open(local_path, "wb") as f:
-                    f.write(r.content)
+                    f.write(response.content)
                 with self._cache_lock:
                     self._image_cache[cache_key] = img.copy()
                 return img
@@ -286,17 +331,17 @@ class DataDragon:
                 with self._cache_lock:
                     self._image_cache[cache_key] = img.copy()
                 return img
-            except Exception:
-                pass
+            except Exception as e:
+                logging.debug(f"Erreur lecture cache icône spell {image_filename}: {e}")
         
         # Télécharger
         url = URL_DD_IMG_SPELL.format(version=self.version, filename=image_filename)
         try:
-            r = requests.get(url, timeout=5)
-            if r.status_code == 200:
-                img = Image.open(BytesIO(r.content))
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                img = Image.open(BytesIO(response.content))
                 with open(local_path, "wb") as f:
-                    f.write(r.content)
+                    f.write(response.content)
                 with self._cache_lock:
                     self._image_cache[cache_key] = img.copy()
                 return img
@@ -314,11 +359,11 @@ class DataDragon:
         Returns:
             Image PIL ou None si non trouvée
         """
-        cid = self.resolve_champion(champion_name)
-        if not cid:
+        champion_id = self.resolve_champion(champion_name)
+        if not champion_id:
             return None
         
-        real_name = self.by_id[cid].get("id", champion_name)
+        real_name = self.by_id[champion_id].get("id", champion_name)
         url = URL_DD_SPLASH.format(champion=real_name)
         
         try:
@@ -326,7 +371,7 @@ class DataDragon:
             if response.status_code == 200:
                 return Image.open(BytesIO(response.content))
         except Exception as e:
-            logging.warning(f"DataDragon: Erreur splash art - {e}")
+            logging.warning(f"DataDragon: Erreur splash art pour {champion_name} - {e}")
         return None
 
 
@@ -641,11 +686,12 @@ class WebSocketManager:
             return
         
         try:
-            resp = await self.connection.request('get', "/lol-champ-select/v1/session")
-            if resp.status != 200:
+            response = await self.connection.request('get', "/lol-champ-select/v1/session")
+            if response.status != 200:
                 return
-            session = await resp.json()
-        except Exception:
+            session = await response.json()
+        except Exception as e:
+            logging.debug(f"Erreur récupération session champ select: {e}")
             return
         
         # Ignorer ARAM/modes avec bench
@@ -680,11 +726,11 @@ class WebSocketManager:
         if params.get("auto_pick_enabled") and params.get("selected_pick_1"):
             pick_action = next((a for a in my_actions if a.get("type") == "pick"), None)
             if pick_action:
-                target_cid = self.dd.resolve_champion(params.get("selected_pick_1"))
+                target_champion_id = self.dd.resolve_champion(params.get("selected_pick_1"))
                 current_hover = pick_action.get("championId")
-                if target_cid and target_cid != 0 and current_hover != target_cid:
+                if target_champion_id and target_champion_id != 0 and current_hover != target_champion_id:
                     if time() - self.state.last_intent_try_ts > 0.5:
-                        await self._hover_champion(pick_action["id"], target_cid)
+                        await self._hover_champion(pick_action["id"], target_champion_id)
                         self.state.last_intent_try_ts = time()
         
         # ACTIONS (BAN & PICK)
@@ -713,11 +759,11 @@ class WebSocketManager:
             return
         self.state.last_action_try_ts = time()
         
-        cid = self.dd.resolve_champion(selected_ban)
-        if not cid:
+        champion_id = self.dd.resolve_champion(selected_ban)
+        if not champion_id:
             return
         
-        success = await self._lock_in_champion(action["id"], cid)
+        success = await self._lock_in_champion(action["id"], champion_id)
         if success:
             self.state.has_banned = True
             self._notify_ui(self.EVENT_CHAMPION_BANNED, selected_ban)
@@ -731,11 +777,11 @@ class WebSocketManager:
         
         pickable_ids = []
         try:
-            r = await self.connection.request('get', "/lol-champ-select/v1/pickable-champion-ids")
-            if r.status == 200:
-                pickable_ids = await r.json()
-        except Exception:
-            pass
+            response = await self.connection.request('get', "/lol-champ-select/v1/pickable-champion-ids")
+            if response.status == 200:
+                pickable_ids = await response.json()
+        except Exception as e:
+            logging.debug(f"Erreur récupération champions pickables: {e}")
         
         pickable_set = set(pickable_ids) if pickable_ids else set()
         is_list_empty = len(pickable_set) == 0
@@ -746,21 +792,21 @@ class WebSocketManager:
             params.get("selected_pick_3")
         ]
         
-        for name in picks:
-            if not name:
+        for champion_name in picks:
+            if not champion_name:
                 continue
-            cid = self.dd.resolve_champion(name)
-            if not cid:
+            champion_id = self.dd.resolve_champion(champion_name)
+            if not champion_id:
                 continue
             
-            should_try = (cid in pickable_set) or is_list_empty
+            should_try = (champion_id in pickable_set) or is_list_empty
             
             if should_try:
-                success = await self._lock_in_champion(action["id"], cid)
+                success = await self._lock_in_champion(action["id"], champion_id)
                 if success:
                     self.state.has_picked = True
-                    self._notify_ui(self.EVENT_CHAMPION_PICKED, name)
-                    self._notify_ui(self.EVENT_STATUS, (f"{name} sécurisé ! À toi de jouer.", "🔒"))
+                    self._notify_ui(self.EVENT_CHAMPION_PICKED, champion_name)
+                    self._notify_ui(self.EVENT_STATUS, (f"{champion_name} sécurisé ! À toi de jouer.", "🔒"))
                     
                     if params.get("auto_summoners_enabled"):
                         asyncio.create_task(self._set_spells(params))

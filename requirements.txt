@@ -1,16 +1,8 @@
-# Dépendances requises pour l'exécution du script d'installation/build
-# Le script vérifie l'installation, mais il est standard de le lister.
-pyinstaller
-
-# Dépendances principales du projet Python (utilisation directe ou forte)
-lcu_driver
-ttkbootstrap
-Pillow
-pystray
-keyboard
-pygame
-psutil
-
-# Dépendances standard utilisées indirectement ou par des utilitaires
-requests
-urllib3
+ttkbootstrap>=1.10.1
+lcu-driver>=3.1.0
+Pillow>=10.0.0
+pygame>=2.5.0
+pystray>=0.19.5
+keyboard>=0.13.5
+psutil>=5.9.5
+requests>=2.31.0

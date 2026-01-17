@@ -23,7 +23,7 @@ from typing import Dict, Any, Optional
 # APPLICATION METADATA
 # ───────────────────────────────────────────────────────────────────────────
 
-CURRENT_VERSION: str = "6.0"
+CURRENT_VERSION: str = "6.1"
 GITHUB_REPO_URL: str = "https://github.com/qurnt1/main_lol_2"
 GITHUB_RELEASES_API: str = "https://api.github.com/repos/qurnt1/main_lol_2/releases/latest"
 
