@@ -2,10 +2,12 @@ import os
 import subprocess
 import sys
 import shutil
-import time
 
 def main():
-    print("--- Début du script d'installation (Mode FICHIER UNIQUE / ONEFILE) ---")
+    print("=" * 60)
+    print("   MAIN LOL - Script de Compilation (v7.0)")
+    print("   Architecture Modulaire (src/)")
+    print("=" * 60)
     
     # Définition des chemins
     try:
@@ -16,17 +18,39 @@ def main():
     root_dir = os.path.dirname(script_path)
     os.chdir(root_dir)
 
-    # Arguments PyInstaller
+    # ─────────────────────────────────────────────────────────────────────
+    # CONFIGURATION PYINSTALLER
+    # ─────────────────────────────────────────────────────────────────────
+    
     raw_args = [
-        '--onefile',     # <--- ON REPASSE EN ONEFILE
-        '--windowed',    
-        '--noconfirm',   
+        '--onefile',      # Fichier unique portable
+        '--windowed',     # Pas de console
+        '--noconfirm',    # Écraser sans confirmation
         '--name', 'OTP LOL',
         '--icon', r'.\config\imgs\garen.ico',
-        # C'est ici qu'on INCLUT les images DANS l'exe
-        '--add-data', r'.\config;config', 
+        
+        # ─── INCLUSION DES ASSETS ───
+        '--add-data', r'.\config;config',
+        
+        # ─── INCLUSION DU PACKAGE SRC ───
+        # PyInstaller détecte automatiquement les imports, mais on force
+        # l'inclusion du dossier src pour être sûr
+        '--add-data', r'.\src;src',
+        
+        # ─── DÉPENDANCES UI ───
         '--collect-all', 'ttkbootstrap',
+        
+        # ─── HIDDEN IMPORTS (Modules non détectés automatiquement) ───
+        # Modules du package src (pour être sûr qu'ils sont inclus)
+        '--hidden-import=src',
+        '--hidden-import=src.config',
+        '--hidden-import=src.core',
+        '--hidden-import=src.ui',
+        '--hidden-import=src.utils',
+        
+        # Dépendances tierces
         '--hidden-import=keyboard',
+        '--hidden-import=pygame',
         '--hidden-import=pygame.mixer',
         '--hidden-import=pygame.sndarray',
         '--hidden-import=psutil',
@@ -34,19 +58,28 @@ def main():
         '--hidden-import=pystray',
         '--hidden-import=PIL.Image',
         '--hidden-import=PIL.ImageTk',
-        'app.py'
+        '--hidden-import=PIL.ImageEnhance',
+        '--hidden-import=lcu_driver',
+        '--hidden-import=requests',
+        
+        # ─── POINT D'ENTRÉE ───
+        'launcher.py'
     ]
     
-    # Pré-traitement des arguments (chemins absolus)
+    # ─────────────────────────────────────────────────────────────────────
+    # PRÉ-TRAITEMENT DES ARGUMENTS (chemins absolus)
+    # ─────────────────────────────────────────────────────────────────────
+    
     processed_args = []
     app_name = None 
     arg_iter = iter(raw_args)
+    
     for arg in arg_iter:
         if arg == '--add-data':
             try:
                 value = next(arg_iter) 
                 parts = value.split(';')
-                if len(parts) > 0:
+                if len(parts) >= 2:
                     src_path = parts[0]
                     dest_path = parts[1]
                     abs_src_path = os.path.abspath(src_path)
@@ -57,7 +90,12 @@ def main():
             except StopIteration:
                 processed_args.append(arg) 
         elif arg == '--icon':
-            processed_args.extend([arg, os.path.abspath(next(arg_iter))])
+            icon_path = next(arg_iter)
+            abs_icon = os.path.abspath(icon_path)
+            if os.path.exists(abs_icon):
+                processed_args.extend([arg, abs_icon])
+            else:
+                print(f"⚠️  Icône non trouvée: {abs_icon}")
         elif arg == '--name':
             val = next(arg_iter)
             app_name = val
@@ -69,45 +107,73 @@ def main():
         else:
             processed_args.append(arg)
 
-    # Lancement PyInstaller
-    py_command = [sys.executable, "-m", "PyInstaller"] + processed_args
+    # ─────────────────────────────────────────────────────────────────────
+    # LANCEMENT DE PYINSTALLER
+    # ─────────────────────────────────────────────────────────────────────
     
     dist_path = os.path.join(root_dir, 'dist')
     build_path = os.path.join(root_dir, 'build')
     
-    py_command.extend(["--clean", f"--distpath={dist_path}", f"--workpath={build_path}", f"--specpath={root_dir}"])
+    py_command = [sys.executable, "-m", "PyInstaller"] + processed_args
+    py_command.extend([
+        "--clean", 
+        f"--distpath={dist_path}", 
+        f"--workpath={build_path}", 
+        f"--specpath={root_dir}"
+    ])
 
-    print("\n--- Compilation en cours... ---")
+    print("\n📦 Compilation en cours...")
+    print("   (Cela peut prendre quelques minutes)\n")
+    
     try:
         subprocess.run(py_command, check=True, text=True, encoding='utf-8', errors='replace')
-    except subprocess.CalledProcessError:
-        print("ERREUR COMPILATION"); sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ ERREUR COMPILATION: {e}")
+        sys.exit(1)
 
-    # Déplacement du fichier EXE
+    # ─────────────────────────────────────────────────────────────────────
+    # DÉPLACEMENT ET NETTOYAGE
+    # ─────────────────────────────────────────────────────────────────────
+    
     exe_name = f"{app_name}.exe"
     source = os.path.join(dist_path, exe_name)
     target = os.path.join(root_dir, exe_name)
     
-    print(f"\n--- Déplacement de l'EXE ---")
+    print(f"\n📁 Déplacement de l'exécutable...")
+    
     if os.path.exists(source):
         if os.path.exists(target):
-            os.remove(target) # On supprime l'ancien
+            os.remove(target)
         
         shutil.move(source, target)
-        print(f"✅ SUCCÈS : {target}")
+        print(f"\n✅ SUCCÈS : {target}")
+        print(f"   Taille : {os.path.getsize(target) / (1024*1024):.1f} Mo")
         
         # Nettoyage
+        print("\n🧹 Nettoyage des fichiers temporaires...")
         try:
-            shutil.rmtree(build_path)
-            shutil.rmtree(dist_path)
-            if os.path.exists(os.path.join(root_dir, f"{app_name}.spec")):
-                os.remove(os.path.join(root_dir, f"{app_name}.spec"))
-            # Nettoyage de l'ancien dossier s'il existe encore
-            if os.path.exists(os.path.join(root_dir, app_name)):
-                shutil.rmtree(os.path.join(root_dir, app_name))
-        except: pass
+            if os.path.exists(build_path):
+                shutil.rmtree(build_path)
+            if os.path.exists(dist_path):
+                shutil.rmtree(dist_path)
+            spec_file = os.path.join(root_dir, f"{app_name}.spec")
+            if os.path.exists(spec_file):
+                os.remove(spec_file)
+            # Nettoyage de l'ancien dossier onedir s'il existe
+            old_dir = os.path.join(root_dir, app_name)
+            if os.path.exists(old_dir):
+                shutil.rmtree(old_dir)
+            print("   ✓ Nettoyage terminé")
+        except Exception as e:
+            print(f"   ⚠️ Erreur nettoyage: {e}")
     else:
-        print("Erreur : EXE non trouvé.")
+        print(f"\n❌ Erreur : EXE non trouvé à {source}")
+        sys.exit(1)
+    
+    print("\n" + "=" * 60)
+    print("   COMPILATION TERMINÉE")
+    print("=" * 60)
+
 
 if __name__ == "__main__":
     main()
