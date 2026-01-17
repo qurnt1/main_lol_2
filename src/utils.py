@@ -9,6 +9,7 @@ import sys
 import logging
 import requests
 from typing import Optional
+import urllib.parse
 
 import psutil
 
@@ -114,32 +115,6 @@ def check_for_updates() -> Optional[str]:
     return None
 
 
-def compare_versions(current: str, remote: str) -> bool:
-    """
-    Compare deux versions sémantiques.
-    
-    Args:
-        current: Version actuelle (ex: "6.0")
-        remote: Version distante (ex: "6.1")
-        
-    Returns:
-        True si remote > current
-    """
-    try:
-        current_parts = [int(x) for x in current.split(".")]
-        remote_parts = [int(x) for x in remote.split(".")]
-        
-        # Normaliser la longueur
-        max_len = max(len(current_parts), len(remote_parts))
-        current_parts.extend([0] * (max_len - len(current_parts)))
-        remote_parts.extend([0] * (max_len - len(remote_parts)))
-        
-        return remote_parts > current_parts
-    except (ValueError, AttributeError):
-        # En cas d'erreur, comparer comme strings
-        return remote != current
-
-
 # ───────────────────────────────────────────────────────────────────────────
 # URL UTILITIES
 # ───────────────────────────────────────────────────────────────────────────
@@ -155,7 +130,7 @@ def build_opgg_url(region: str, riot_id: str) -> str:
     Returns:
         URL OP.GG complète
     """
-    import urllib.parse
+
     
     # Convertir GameName#Tag en GameName-Tag pour l'URL
     url_name = riot_id
@@ -178,7 +153,6 @@ def build_porofessor_url(region: str, riot_id: str) -> str:
     Returns:
         URL Porofessor complète
     """
-    import urllib.parse
     
     url_name = riot_id
     if "#" in riot_id:

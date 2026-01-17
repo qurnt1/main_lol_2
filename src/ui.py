@@ -896,7 +896,7 @@ class LoLAssistantUI:
     
     def _handle_core_event(self, event_type: str, data: Any) -> None:
         """Traite un événement du core sur le thread principal."""
-        from core import WebSocketManager  # Import local pour éviter la boucle
+        from .core import WebSocketManager  # Import relatif correct
         
         if event_type == WebSocketManager.EVENT_CONNECTED:
             self.update_connection_indicator(True)
