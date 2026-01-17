@@ -90,7 +90,7 @@ class SettingsWindow:
         
         # ROW 0: Auto Accept
         ttk.Checkbutton(
-            frame, text="Accepter la partie (Auto-Accept)", 
+            frame, text="Accepter la partie automatiquement", 
             variable=self.auto_var,
             command=lambda: self.parent.update_param("auto_accept_enabled", self.auto_var.get()),
             bootstyle="success-round-toggle"
@@ -98,7 +98,7 @@ class SettingsWindow:
         
         # ROW 1: Auto Pick Toggle
         ttk.Checkbutton(
-            frame, text="Sécuriser mon Champion (Auto-Pick)", 
+            frame, text="Sécuriser mon Champion", 
             variable=self.pick_var,
             command=lambda: (self.parent.update_param("auto_pick_enabled", self.pick_var.get()), self.toggle_pick()),
             bootstyle="info-round-toggle"
@@ -122,7 +122,7 @@ class SettingsWindow:
         
         # ROW 5: Auto Ban Toggle
         ttk.Checkbutton(
-            frame, text="Bannir un Champion (Auto-Ban)", 
+            frame, text="Bannir un Champion", 
             variable=self.ban_var,
             command=lambda: (self.parent.update_param("auto_ban_enabled", self.ban_var.get()), self.toggle_ban()),
             bootstyle="danger-round-toggle"
@@ -136,7 +136,7 @@ class SettingsWindow:
         
         # ROW 7: Auto Spells Toggle
         ttk.Checkbutton(
-            frame, text="Configurer Sorts (Auto-Spells)", 
+            frame, text="Configurer Sorts", 
             variable=self.summ_var,
             command=lambda: (self.parent.update_param("auto_summoners_enabled", self.summ_var.get()), self.toggle_spells()),
             bootstyle="warning-round-toggle"
@@ -192,21 +192,21 @@ class SettingsWindow:
         misc_frame.grid(row=14, column=0, columnspan=2, sticky="w")
         
         ttk.Checkbutton(
-            misc_frame, text="Retour au salon automatique (Skip Honor)", 
+            misc_frame, text="Retour au salon automatique a la fin de la partie", 
             variable=self.play_again_var,
             command=lambda: self.parent.update_param("auto_play_again_enabled", self.play_again_var.get()),
             bootstyle="info-round-toggle"
         ).pack(anchor="w", pady=2)
         
         ttk.Checkbutton(
-            misc_frame, text="Masquer Main LOL quand LoL se lance", 
+            misc_frame, text="Masquer Main LOL au lancement de LoL (3 secondes)", 
             variable=self.auto_hide_var,
             command=lambda: self.parent.update_param("auto_hide_on_connect", self.auto_hide_var.get()),
             bootstyle="secondary-round-toggle"
         ).pack(anchor="w", pady=2)
         
         ttk.Checkbutton(
-            misc_frame, text="Fermer Main LOL quand LoL se ferme", 
+            misc_frame, text="Fermer Main LOL à la fermeture de LoL", 
             variable=self.close_on_exit_var,
             command=lambda: self.parent.update_param("close_app_on_lol_exit", self.close_on_exit_var.get()),
             bootstyle="danger-round-toggle"
